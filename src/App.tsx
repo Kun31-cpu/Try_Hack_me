@@ -63,7 +63,10 @@ import {
   Instagram,
   Network,
   Download,
-  Crown
+  Crown,
+  Share2,
+  Camera,
+  Facebook
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -1042,8 +1045,8 @@ const RoomDetail = ({ roomId, token, onBack, addToast, onRoomComplete, presence 
   const [loading, setLoading] = useState(true);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [results, setResults] = useState<Record<number, SubmissionResponse>>({});
-  const [hint, setHint] = useState<string | null>(null);
-  const [hintLoading, setHintLoading] = useState(false);
+  const [hints, setHints] = useState<Record<number, string>>({});
+  const [hintsLoading, setHintsLoading] = useState<Record<number, boolean>>({});
   
   // Simulation states
   const [machineStatus, setMachineStatus] = useState<'stopped' | 'starting' | 'running'>('stopped');
@@ -1051,6 +1054,30 @@ const RoomDetail = ({ roomId, token, onBack, addToast, onRoomComplete, presence 
   const [vpnConnected, setVpnConnected] = useState(false);
   const [showMetrics, setShowMetrics] = useState(false);
   const [metrics, setMetrics] = useState({ cpu: 0, ram: 0 });
+  const [sshKey, setSshKey] = useState<{ publicKey: string, privateKey: string } | null>(null);
+  const [isGeneratingKey, setIsGeneratingKey] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  useEffect(() => {
+    // Fetch existing SSH key on mount
+    fetch('/api/user/ssh-key')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => setSshKey(data));
+  }, []);
+
+  const handleGenerateSSHKey = async () => {
+    setIsGeneratingKey(true);
+    try {
+      const res = await fetch('/api/user/ssh-key/generate', { method: 'POST' });
+      const data = await res.json();
+      setSshKey(data);
+      addToast('SSH Key pair generated successfully!', 'success');
+    } catch (err) {
+      addToast('Failed to generate SSH key', 'error');
+    } finally {
+      setIsGeneratingKey(false);
+    }
+  };
 
   useEffect(() => {
     let interval: any;
@@ -1111,6 +1138,7 @@ const RoomDetail = ({ roomId, token, onBack, addToast, onRoomComplete, presence 
         const solvedCount = Object.values(newResults).filter(r => r.status === 'correct' || r.status === 'already_solved').length;
         if (solvedCount === room.tasks.length) {
           addToast(`Congratulations! You've completed ${room.title}!`, 'success');
+          setShowSuccessModal(true);
           onRoomComplete?.(roomId);
         }
       }
@@ -1121,14 +1149,14 @@ const RoomDetail = ({ roomId, token, onBack, addToast, onRoomComplete, presence 
 
   const requestHint = async (task: Task) => {
     if (!room) return;
-    setHintLoading(true);
+    setHintsLoading(prev => ({ ...prev, [task.id]: true }));
     try {
       const h = await getHint(room.title, task.question, "");
-      setHint(h || "No hint available.");
+      setHints(prev => ({ ...prev, [task.id]: h || "No hint available." }));
     } catch (e) {
-      setHint("AI is currently unavailable.");
+      setHints(prev => ({ ...prev, [task.id]: "AI is currently unavailable." }));
     }
-    setHintLoading(false);
+    setHintsLoading(prev => ({ ...prev, [task.id]: false }));
   };
 
   const handleStartMachine = () => {
@@ -1199,6 +1227,111 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
     
     // Simulate connection after download
     setTimeout(() => setVpnConnected(true), 2000);
+  };
+
+  const handleDownloadBadge = () => {
+    if (!room) return;
+    addToast('Generating your achievement badge...', 'info');
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = 800;
+    canvas.height = 600;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Background
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Border
+    ctx.strokeStyle = '#a3e635';
+    ctx.lineWidth = 15;
+    ctx.strokeRect(30, 30, canvas.width - 60, canvas.height - 60);
+    
+    // Inner border
+    ctx.strokeStyle = 'rgba(163, 230, 53, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(50, 50, canvas.width - 100, canvas.height - 100);
+
+    // Text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 32px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('CERTIFICATE OF COMPLETION', canvas.width / 2, 120);
+
+    ctx.fillStyle = '#a3e635';
+    ctx.font = '900 56px Inter, sans-serif';
+    ctx.fillText(room.title.toUpperCase(), canvas.width / 2, 260);
+
+    ctx.fillStyle = '#71717a';
+    ctx.font = '500 20px Inter, sans-serif';
+    ctx.fillText('Successfully compromised by', canvas.width / 2, 330);
+
+    const savedUser = localStorage.getItem('user');
+    const username = savedUser ? JSON.parse(savedUser).username : 'GHOST_OPERATOR';
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 42px Inter, sans-serif';
+    ctx.fillText(username.toUpperCase(), canvas.width / 2, 390);
+
+    ctx.fillStyle = '#a3e635';
+    ctx.font = '900 24px Inter, sans-serif';
+    ctx.fillText('MISSION ACCOMPLISHED', canvas.width / 2, 510);
+    
+    ctx.fillStyle = '#3f3f46';
+    ctx.font = '500 14px Inter, sans-serif';
+    ctx.fillText(`VERIFIED ON HACKLAB NETWORK | ${new Date().toLocaleDateString()}`, canvas.width / 2, 550);
+
+    // Download
+    const link = document.createElement('a');
+    link.download = `HackLab_${room.title.replace(/\s+/g, '_')}_Badge.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    addToast('Badge downloaded successfully!', 'success');
+  };
+
+  const handleShareSuccess = async () => {
+    const shareData = {
+      title: 'HackLab Achievement',
+      text: `I just completed the ${room?.title} lab on HackLab! Check it out:`,
+      url: window.location.href
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        addToast('Shared successfully!', 'success');
+      } else {
+        await navigator.clipboard.writeText(`${shareData.text} ${shareData.url}`);
+        addToast('Link copied to clipboard!', 'success');
+      }
+    } catch (err) {
+      console.error('Error sharing:', err);
+      addToast('Failed to share. Link copied instead.', 'info');
+      navigator.clipboard.writeText(window.location.href);
+    }
+  };
+
+  const shareToSocial = (platform: string) => {
+    const url = encodeURIComponent(window.location.origin);
+    const text = encodeURIComponent(`I just completed the ${room?.title} lab on HackLab! #HackLab #CyberSecurity #Hacking`);
+    let shareUrl = '';
+
+    switch (platform) {
+      case 'twitter':
+        shareUrl = `https://twitter.com/intent/tweet?text=${text}&url=${url}`;
+        break;
+      case 'linkedin':
+        shareUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${url}`;
+        break;
+      case 'facebook':
+        shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${url}`;
+        break;
+    }
+
+    if (shareUrl) {
+      window.open(shareUrl, '_blank', 'width=600,height=400');
+    }
   };
 
   if (loading || !room) return (
@@ -1294,10 +1427,14 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
                           </div>
                           <button 
                             onClick={() => requestHint(task)}
-                            className="p-2 hover:bg-app-heading/5 rounded-lg text-zinc-500 hover:text-yellow-500 transition-colors"
+                            disabled={hintsLoading[task.id]}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 rounded-lg border border-yellow-500/20 transition-all group/hint disabled:opacity-50"
                             title="Get AI Hint"
                           >
-                            <Lightbulb className="w-5 h-5" />
+                            <Lightbulb className={cn("w-4 h-4 transition-transform group-hover/hint:scale-110", hintsLoading[task.id] && "animate-pulse")} />
+                            <span className="text-[10px] font-black uppercase tracking-widest">
+                              {hintsLoading[task.id] ? 'Thinking...' : 'Get Hint'}
+                            </span>
                           </button>
                         </div>
 
@@ -1360,7 +1497,7 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
                         )}
 
                         <AnimatePresence>
-                          {hint && (
+                          {hints[task.id] && (
                             <motion.div 
                               initial={{ opacity: 0, height: 0 }}
                               animate={{ opacity: 1, height: 'auto' }}
@@ -1372,7 +1509,7 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
                                 <span className="text-[10px] font-black text-yellow-500 uppercase tracking-widest">AI Mentor Hint</span>
                               </div>
                               <p className="text-sm text-zinc-300 italic leading-relaxed">
-                                {hintLoading ? "Thinking..." : hint}
+                                {hints[task.id]}
                               </p>
                             </motion.div>
                           )}
@@ -1593,27 +1730,215 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
               </p>
             </div>
           </div>
-          {hint && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="bg-yellow-500/5 border border-yellow-500/10 rounded-2xl p-6 shadow-xl"
-            >
-              <div className="flex items-center gap-2 text-yellow-500 mb-3">
-                <Lightbulb className="w-4 h-4" />
-                <span className="text-[10px] font-black uppercase tracking-widest">AI Mentor Hint</span>
-              </div>
-              <p className="text-sm text-zinc-400 italic leading-relaxed">"{hint}"</p>
-              <button 
-                onClick={() => setHint(null)} 
-                className="mt-6 w-full py-2 text-[10px] text-zinc-500 hover:text-white uppercase font-black border border-white/5 rounded-lg hover:bg-white/5 transition-all"
-              >
-                Dismiss Hint
-              </button>
-            </motion.div>
-          )}
+
+          <div className="bg-app-card border border-app-border rounded-2xl p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xs font-black text-app-heading uppercase tracking-widest flex items-center gap-2">
+                <Lock className="w-4 h-4 text-[#a3e635]" />
+                SSH Access
+              </h3>
+              {sshKey && (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                  <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Key Active</span>
+                </div>
+              )}
+            </div>
+            
+            <div className="space-y-4">
+              {sshKey ? (
+                <div className="space-y-4">
+                  <div className="p-4 bg-black/5 dark:bg-black rounded-xl border border-app-border space-y-3">
+                    <div>
+                      <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest block mb-1">Public Key</label>
+                      <div className="flex items-center gap-2">
+                        <code className="text-[10px] font-mono text-app-heading truncate flex-1 bg-black/20 p-1 rounded">
+                          {sshKey.publicKey}
+                        </code>
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText(sshKey.publicKey);
+                            addToast('Public key copied!', 'success');
+                          }}
+                          className="p-1.5 hover:bg-app-heading/5 rounded text-zinc-500 hover:text-[#a3e635]"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest block mb-1">Private Key</label>
+                      <div className="flex items-center gap-2">
+                        <code className="text-[10px] font-mono text-app-heading truncate flex-1 bg-black/20 p-1 rounded">
+                          ••••••••••••••••••••••••••••••••
+                        </code>
+                        <button 
+                          onClick={() => {
+                            navigator.clipboard.writeText(sshKey.privateKey);
+                            addToast('Private key copied!', 'success');
+                          }}
+                          className="p-1.5 hover:bg-app-heading/5 rounded text-zinc-500 hover:text-red-500"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={handleGenerateSSHKey}
+                    disabled={isGeneratingKey}
+                    className="w-full py-3 bg-app-heading/5 hover:bg-app-heading/10 text-app-heading text-xs font-black rounded-lg transition-all border border-app-border flex items-center justify-center gap-2"
+                  >
+                    <RotateCcw className={cn("w-3.5 h-3.5", isGeneratingKey && "animate-spin")} />
+                    Regenerate Keys
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-xs text-zinc-500 leading-relaxed text-center italic">
+                    No SSH key pair found. Generate one to access lab machines via SSH.
+                  </p>
+                  <button 
+                    onClick={handleGenerateSSHKey}
+                    disabled={isGeneratingKey}
+                    className="w-full py-4 bg-[#a3e635] text-black text-sm font-black rounded-xl hover:bg-[#bef264] transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#a3e635]/20"
+                  >
+                    {isGeneratingKey ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    Generate SSH Key Pair
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showSuccessModal && room && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.9, y: 20, opacity: 0 }}
+              className="w-full max-w-2xl bg-app-card border border-[#a3e635]/30 rounded-[2.5rem] overflow-hidden shadow-[0_0_100px_rgba(163,230,53,0.15)] relative"
+            >
+              <button 
+                onClick={() => setShowSuccessModal(false)}
+                className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-zinc-500 hover:text-white transition-all z-20"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {/* Decorative elements */}
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#a3e635] to-transparent opacity-50" />
+              <div className="absolute -top-24 -left-24 w-48 h-48 bg-[#a3e635]/10 blur-[100px] rounded-full" />
+              <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-[#a3e635]/10 blur-[100px] rounded-full" />
+
+              <div className="p-8 md:p-12 flex flex-col items-center text-center relative z-10">
+                <motion.div
+                  initial={{ rotate: -10, scale: 0 }}
+                  animate={{ rotate: 0, scale: 1 }}
+                  transition={{ type: "spring", damping: 12, delay: 0.2 }}
+                  className="w-32 h-32 bg-gradient-to-br from-[#a3e635] to-emerald-600 rounded-3xl flex items-center justify-center shadow-[0_20px_40px_rgba(163,230,53,0.3)] mb-8 relative"
+                >
+                  <Trophy className="w-16 h-16 text-black" strokeWidth={1.5} />
+                  <motion.div 
+                    animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                    className="absolute -inset-4 border-2 border-[#a3e635]/30 rounded-[2.5rem] -z-10"
+                  />
+                </motion.div>
+
+                <h2 className="text-4xl md:text-5xl font-black text-white mb-4 tracking-tight">
+                  MISSION ACCOMPLISHED
+                </h2>
+                <p className="text-zinc-400 text-lg mb-10 max-w-md leading-relaxed">
+                  You've successfully compromised <span className="text-[#a3e635] font-bold">{room.title}</span>. 
+                  Your expertise has been recorded in the global archives.
+                </p>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full mb-12">
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Points Earned</div>
+                    <div className="text-2xl font-black text-[#a3e635]">+{room.tasks?.reduce((acc, t) => acc + t.points, 0)}</div>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Rank Up</div>
+                    <div className="text-2xl font-black text-white">#124</div>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Time Taken</div>
+                    <div className="text-2xl font-black text-white">42m</div>
+                  </div>
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Accuracy</div>
+                    <div className="text-2xl font-black text-white">94%</div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap justify-center gap-4 w-full">
+                  <button 
+                    onClick={handleDownloadBadge}
+                    className="flex-1 min-w-[200px] py-4 bg-[#a3e635] text-black font-black rounded-2xl hover:bg-[#bef264] transition-all flex items-center justify-center gap-3 shadow-xl shadow-[#a3e635]/20"
+                  >
+                    <Download className="w-5 h-5" />
+                    Download Badge
+                  </button>
+                  <button 
+                    onClick={handleShareSuccess}
+                    className="flex-1 min-w-[200px] py-4 bg-white/5 border border-white/10 text-white font-black rounded-2xl hover:bg-white/10 transition-all flex items-center justify-center gap-3"
+                  >
+                    <Share2 className="w-5 h-5" />
+                    Share Success
+                  </button>
+                </div>
+
+                <div className="mt-8 flex items-center gap-6">
+                  <button 
+                    onClick={() => shareToSocial('twitter')}
+                    className="text-zinc-500 hover:text-[#a3e635] transition-colors"
+                  >
+                    <Twitter className="w-5 h-5" />
+                  </button>
+                  <button 
+                    onClick={() => shareToSocial('linkedin')}
+                    className="text-zinc-500 hover:text-[#a3e635] transition-colors"
+                  >
+                    <Linkedin className="w-5 h-5" />
+                  </button>
+                  <button 
+                    onClick={() => shareToSocial('facebook')}
+                    className="text-zinc-500 hover:text-[#a3e635] transition-colors"
+                  >
+                    <Facebook className="w-5 h-5" />
+                  </button>
+                  <button 
+                    onClick={() => {
+                      addToast('Capturing achievement photo...', 'info');
+                      handleDownloadBadge();
+                    }}
+                    className="text-zinc-500 hover:text-[#a3e635] transition-colors"
+                  >
+                    <Camera className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <button 
+                  onClick={onBack}
+                  className="mt-12 text-[10px] font-black text-zinc-500 hover:text-[#a3e635] uppercase tracking-[0.3em] transition-all"
+                >
+                  Return to Headquarters
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

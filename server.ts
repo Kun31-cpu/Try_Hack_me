@@ -313,6 +313,35 @@ async function startServer() {
     }
   });
 
+  let userSSHKeys: Record<string, { publicKey: string, privateKey: string }> = {};
+
+  app.get("/api/user/ssh-key", (req, res) => {
+    const userId = "1"; // Mocking current user
+    if (userSSHKeys[userId]) {
+      res.json(userSSHKeys[userId]);
+    } else {
+      res.status(404).json({ error: "No SSH key found" });
+    }
+  });
+
+  app.post("/api/user/ssh-key/generate", (req, res) => {
+    const userId = "1"; // Mocking current user
+    
+    // Simulate SSH key generation
+    const mockPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7...hacker@hacklab`;
+    const mockPrivateKey = `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
+NhAAAAAwEAAQAAAYEAr+...
+-----END OPENSSH PRIVATE KEY-----`;
+
+    userSSHKeys[userId] = {
+      publicKey: mockPublicKey,
+      privateKey: mockPrivateKey
+    };
+
+    res.json(userSSHKeys[userId]);
+  });
+
   // VPN Configuration Endpoint
   app.get("/api/vpn/config", (req, res) => {
     const username = "hacker"; // In a real app, get from token
