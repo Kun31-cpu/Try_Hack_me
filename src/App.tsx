@@ -16,6 +16,7 @@ import {
   Globe,
   Lock,
   Cpu,
+  Database,
   BookOpen,
   Zap,
   Clock,
@@ -163,7 +164,9 @@ const Navbar = ({
   addToast,
   searchQuery,
   setSearchQuery,
-  view
+  view,
+  notifications,
+  markNotificationsRead
 }: { 
   user: User | null, 
   onLogout: () => void, 
@@ -173,7 +176,9 @@ const Navbar = ({
   addToast: (m: string, t?: 'success' | 'error' | 'info') => void,
   searchQuery: string,
   setSearchQuery: (v: string) => void,
-  view: string
+  view: string,
+  notifications: any[],
+  markNotificationsRead: () => void
 }) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDevelopDropdownOpen, setIsDevelopDropdownOpen] = useState(false);
@@ -257,7 +262,9 @@ const Navbar = ({
                     className="p-2 text-app-text hover:text-app-heading hover:bg-app-heading/5 rounded-lg transition-colors relative"
                   >
                     <Bell className="w-5 h-5" />
-                    <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-app-card"></span>
+                    {notifications.some(n => !n.read) && (
+                      <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2 border-app-card"></span>
+                    )}
                   </button>
                   
                   <AnimatePresence>
@@ -272,24 +279,47 @@ const Navbar = ({
                         >
                           <div className="px-4 py-3 border-b border-app-border flex items-center justify-between">
                             <h4 className="text-xs font-black text-app-heading uppercase tracking-widest">Notifications</h4>
-                            <button className="text-[10px] text-zinc-500 hover:text-app-heading uppercase font-bold">Mark all read</button>
+                            <button 
+                              onClick={markNotificationsRead}
+                              className="text-[10px] text-zinc-500 hover:text-app-heading uppercase font-bold"
+                            >
+                              Mark all read
+                            </button>
                           </div>
                           <div className="max-h-96 overflow-y-auto">
-                            {[1, 2, 3].map(i => (
-                              <div key={i} className="px-4 py-3 border-b border-app-border hover:bg-app-heading/5 transition-colors cursor-pointer">
+                            {notifications.length > 0 ? notifications.map(n => (
+                              <div key={n.id} className={cn(
+                                "px-4 py-3 border-b border-app-border hover:bg-app-heading/5 transition-colors cursor-pointer",
+                                !n.read && "bg-app-heading/5"
+                              )}>
                                 <div className="flex gap-3">
-                                  <div className="w-8 h-8 bg-emerald-500/10 rounded-full flex items-center justify-center flex-shrink-0">
-                                    <Award className="w-4 h-4 text-emerald-500" />
+                                  <div className={cn(
+                                    "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0",
+                                    n.type === 'solve' ? "bg-emerald-500/10 text-emerald-500" : 
+                                    n.type === 'new_room' ? "bg-[#a3e635]/10 text-[#a3e635]" :
+                                    n.type === 'leaderboard' ? "bg-yellow-500/10 text-yellow-500" :
+                                    "bg-zinc-500/10 text-zinc-500"
+                                  )}>
+                                    {n.type === 'solve' ? <CheckCircle2 className="w-4 h-4" /> : 
+                                     n.type === 'new_room' ? <PlusCircle className="w-4 h-4" /> :
+                                     n.type === 'leaderboard' ? <Trophy className="w-4 h-4" /> :
+                                     <Bell className="w-4 h-4" />}
                                   </div>
                                   <div>
                                     <p className="text-xs text-app-text leading-relaxed">
-                                      <span className="font-bold text-app-heading">System:</span> Your streak is now 5 days! Keep it up.
+                                      <span className="font-bold text-app-heading">{n.title}:</span> {n.message}
                                     </p>
-                                    <span className="text-[10px] text-zinc-500 mt-1 block">2 hours ago</span>
+                                    <span className="text-[10px] text-zinc-500 mt-1 block">
+                                      {new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
                                   </div>
                                 </div>
                               </div>
-                            ))}
+                            )) : (
+                              <div className="p-8 text-center text-zinc-500 text-xs font-medium">
+                                No notifications yet.
+                              </div>
+                            )}
                           </div>
                           <button className="w-full py-2 text-[10px] text-zinc-500 hover:text-app-heading uppercase font-bold bg-black/5 dark:bg-black/20">View all notifications</button>
                         </motion.div>
@@ -708,11 +738,14 @@ const RoomCard = ({ room, onClick, isSaved, onToggleSave }: { room: Room, onClic
           <button 
             onClick={(e) => { e.stopPropagation(); onToggleSave(room.id); }}
             className={cn(
-              "absolute top-4 left-4 p-2 rounded-lg border backdrop-blur-md transition-all",
-              isSaved ? "bg-yellow-500/20 border-yellow-500/30 text-yellow-500" : "bg-black/40 border-app-border text-zinc-500 hover:text-app-heading"
+              "absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-lg border backdrop-blur-md transition-all group/save",
+              isSaved ? "bg-yellow-500/20 border-yellow-500/30 text-yellow-500" : "bg-black/40 border-app-border text-zinc-500 hover:text-app-heading hover:bg-black/60"
             )}
           >
-            <Bookmark className={cn("w-4 h-4", isSaved && "fill-yellow-500")} />
+            <Bookmark className={cn("w-3.5 h-3.5 transition-transform group-hover/save:scale-110", isSaved && "fill-yellow-500")} />
+            <span className="text-[10px] font-black uppercase tracking-widest">
+              {isSaved ? 'Saved' : 'Save Room'}
+            </span>
           </button>
         )}
       </div>
@@ -1016,6 +1049,21 @@ const RoomDetail = ({ roomId, token, onBack, addToast, onRoomComplete, presence 
   const [machineStatus, setMachineStatus] = useState<'stopped' | 'starting' | 'running'>('stopped');
   const [deployProgress, setDeployProgress] = useState(0);
   const [vpnConnected, setVpnConnected] = useState(false);
+  const [showMetrics, setShowMetrics] = useState(false);
+  const [metrics, setMetrics] = useState({ cpu: 0, ram: 0 });
+
+  useEffect(() => {
+    let interval: any;
+    if (showMetrics && machineStatus === 'running') {
+      interval = setInterval(() => {
+        setMetrics({
+          cpu: Math.floor(Math.random() * 40) + 10, // 10-50%
+          ram: Math.floor(Math.random() * 20) + 40, // 40-60%
+        });
+      }, 2000);
+    }
+    return () => clearInterval(interval);
+  }, [showMetrics, machineStatus]);
 
   useEffect(() => {
     socket.emit('join-room', roomId);
@@ -1233,6 +1281,11 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
                                     <CheckCircle2 className="w-3 h-3" />
                                     Status: Complete
                                   </span>
+                                ) : results[task.id]?.status === 'incorrect' ? (
+                                  <span className="flex items-center gap-1 text-[10px] text-red-500 font-black uppercase tracking-widest">
+                                    <X className="w-3 h-3" />
+                                    Status: Incorrect
+                                  </span>
                                 ) : (
                                   <span className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">Status: Pending</span>
                                 )}
@@ -1253,23 +1306,38 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
                             <input 
                               type="text" 
                               placeholder="Enter flag (e.g. HACK{...})"
-                              className="w-full bg-black/5 dark:bg-black border border-app-border rounded-lg pl-4 pr-12 py-3 text-sm text-app-heading focus:outline-none focus:border-[#a3e635] disabled:opacity-50 transition-all"
+                              className={cn(
+                                "w-full bg-black/5 dark:bg-black border rounded-lg pl-4 pr-12 py-3 text-sm text-app-heading focus:outline-none disabled:opacity-50 transition-all",
+                                (results[task.id]?.status === 'correct' || results[task.id]?.status === 'already_solved')
+                                  ? "border-emerald-500 ring-1 ring-emerald-500/20" 
+                                  : results[task.id]?.status === 'incorrect'
+                                    ? "border-red-500 ring-1 ring-red-500/20"
+                                    : "border-app-border focus:border-[#a3e635]"
+                              )}
                               value={answers[task.id] || ''}
                               onChange={(e) => setAnswers(prev => ({ ...prev, [task.id]: e.target.value }))}
-                              disabled={machineStatus !== 'running' || results[task.id]?.status === 'correct'}
+                              disabled={machineStatus !== 'running' || results[task.id]?.status === 'correct' || results[task.id]?.status === 'already_solved'}
                             />
-                            {results[task.id]?.status === 'correct' && (
-                              <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                              {(results[task.id]?.status === 'correct' || results[task.id]?.status === 'already_solved') && (
                                 <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                              </div>
-                            )}
+                              )}
+                              {results[task.id]?.status === 'incorrect' && (
+                                <X className="w-5 h-5 text-red-500" />
+                              )}
+                            </div>
                           </div>
                           <button 
                             onClick={() => submitFlag(task.id)}
-                            className="w-full sm:w-auto px-8 py-3 bg-[#a3e635] hover:bg-[#bef264] text-black text-sm font-black rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-[#a3e635]/10"
-                            disabled={machineStatus !== 'running' || results[task.id]?.status === 'correct'}
+                            className={cn(
+                              "w-full sm:w-auto px-8 py-3 text-sm font-black rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg",
+                              (results[task.id]?.status === 'correct' || results[task.id]?.status === 'already_solved')
+                                ? "bg-emerald-500 text-black shadow-emerald-500/10"
+                                : "bg-[#a3e635] hover:bg-[#bef264] text-black shadow-[#a3e635]/10"
+                            )}
+                            disabled={machineStatus !== 'running' || results[task.id]?.status === 'correct' || results[task.id]?.status === 'already_solved'}
                           >
-                            {results[task.id]?.status === 'correct' ? 'Solved' : 'Submit'}
+                            {(results[task.id]?.status === 'correct' || results[task.id]?.status === 'already_solved') ? 'Solved' : 'Submit'}
                           </button>
                         </div>
                         
@@ -1378,15 +1446,68 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
                       <span className="text-xs font-mono text-app-heading font-bold">59:42</span>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => setMachineStatus('stopped')}
-                      className="flex-1 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-black rounded-lg transition-all border border-red-500/20"
+
+                  {showMetrics && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="p-4 bg-black/5 dark:bg-black rounded-xl border border-app-border space-y-4"
                     >
-                      Terminate
-                    </button>
-                    <button className="px-4 py-3 bg-app-heading/5 hover:bg-app-heading/10 text-app-heading text-xs font-black rounded-lg transition-all border border-app-border">
-                      Add Time
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                          <span className="flex items-center gap-1"><Cpu className="w-3 h-3" /> CPU Usage</span>
+                          <span className="text-app-heading">{metrics.cpu}%</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-app-heading/10 rounded-full overflow-hidden">
+                          <motion.div 
+                            className="h-full bg-[#a3e635]"
+                            animate={{ width: `${metrics.cpu}%` }}
+                            transition={{ duration: 1 }}
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                          <span className="flex items-center gap-1"><Database className="w-3 h-3" /> RAM Usage</span>
+                          <span className="text-app-heading">{metrics.ram}%</span>
+                        </div>
+                        <div className="w-full h-1.5 bg-app-heading/10 rounded-full overflow-hidden">
+                          <motion.div 
+                            className="h-full bg-blue-500"
+                            animate={{ width: `${metrics.ram}%` }}
+                            transition={{ duration: 1 }}
+                          />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={() => {
+                          setMachineStatus('stopped');
+                          setShowMetrics(false);
+                        }}
+                        className="flex-1 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-black rounded-lg transition-all border border-red-500/20"
+                      >
+                        Terminate
+                      </button>
+                      <button className="px-4 py-3 bg-app-heading/5 hover:bg-app-heading/10 text-app-heading text-xs font-black rounded-lg transition-all border border-app-border">
+                        Add Time
+                      </button>
+                    </div>
+                    <button 
+                      onClick={() => setShowMetrics(!showMetrics)}
+                      className={cn(
+                        "w-full py-3 text-xs font-black rounded-lg transition-all border flex items-center justify-center gap-2",
+                        showMetrics 
+                          ? "bg-[#a3e635]/10 border-[#a3e635]/30 text-[#a3e635]" 
+                          : "bg-app-heading/5 border-app-border text-app-heading hover:bg-app-heading/10"
+                      )}
+                    >
+                      <Activity className={cn("w-4 h-4", showMetrics && "animate-pulse")} />
+                      {showMetrics ? 'Hide Performance' : 'Monitor Performance'}
                     </button>
                   </div>
                 </div>
@@ -4303,6 +4424,40 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
+    const fetchInitialData = async () => {
+      try {
+        const res = await fetch('/api/notifications');
+        const data = await res.json();
+        setNotifications(Array.isArray(data) ? data : []);
+      } catch (e) {
+        console.error('Failed to fetch notifications:', e);
+      }
+    };
+
+    if (token) {
+      fetchInitialData();
+    }
+
+    socket.on('notification-new', (notification) => {
+      setNotifications(prev => [notification, ...prev].slice(0, 20));
+      addToast(notification.title, 'info');
+    });
+
+    return () => {
+      socket.off('notification-new');
+    };
+  }, [token]);
+
+  const markNotificationsRead = async () => {
+    try {
+      await fetch('/api/notifications/read', { method: 'POST' });
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch (e) {
+      console.error('Failed to mark notifications as read:', e);
+    }
+  };
+
+  useEffect(() => {
     if (user && !localStorage.getItem('hasSeenOnboarding')) {
       setShowOnboarding(true);
     }
@@ -4372,20 +4527,6 @@ export default function App() {
     }
     fetchRooms();
   }, [token]);
-
-  useEffect(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}`);
-    
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'NEW_SOLVE') {
-        setNotifications(prev => [data, ...prev].slice(0, 5));
-      }
-    };
-
-    return () => ws.close();
-  }, []);
 
   useEffect(() => {
     socket.on('presence-update', (data) => {
@@ -4494,6 +4635,8 @@ export default function App() {
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         view={view}
+        notifications={notifications}
+        markNotificationsRead={markNotificationsRead}
       />
 
       {/* Modern Floating Navigation - Visible on all devices */}
@@ -4763,6 +4906,40 @@ export default function App() {
                       ))}
                     </div>
                   </section>
+
+                  {/* Saved Rooms Section */}
+                  {savedLabs.length > 0 && (
+                    <section className="mt-12">
+                      <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-3">
+                          <Bookmark className="w-6 h-6 text-yellow-500 fill-yellow-500" />
+                          <h3 className="text-xl font-black text-app-heading uppercase tracking-tighter">Saved Rooms</h3>
+                        </div>
+                        <button 
+                          onClick={() => setView('saved')} 
+                          className="text-xs font-black text-zinc-500 hover:text-app-heading uppercase tracking-widest transition-colors"
+                        >
+                          Manage All
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {rooms.filter(r => savedLabs.includes(r.id)).slice(0, 4).map(room => (
+                          <RoomCard 
+                            key={room.id} 
+                            room={room} 
+                            onClick={() => {
+                              setSelectedRoomId(room.id);
+                              setView('room-detail');
+                            }}
+                            isSaved={true}
+                            onToggleSave={(id) => {
+                              setSavedLabs(prev => prev.filter(i => i !== id));
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  )}
                 </div>
 
                 {/* Right Column: Sidebars */}

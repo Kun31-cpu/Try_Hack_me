@@ -46,7 +46,9 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '100mb' }));
+  app.use(express.urlencoded({ limit: '100mb', extended: true }));
+  app.use(express.raw({ limit: '100mb', type: '*/*' }));
 
   // In-memory store for rooms and tasks (simulating a DB)
   let rooms: any[] = [
@@ -85,6 +87,11 @@ async function startServer() {
     { id: 1, type: 'solve', user: 'cyber_ghost', room: 'Web Exploitation 101', points: 50, timestamp: new Date().toISOString() },
     { id: 2, type: 'streak', user: 'admin', streak: 12, timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString() },
     { id: 3, type: 'solve', user: 'null_pointer', room: 'Introduction to Cyber Security', points: 20, timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString() }
+  ];
+
+  let notifications: any[] = [
+    { id: 1, type: 'system', title: 'Welcome!', message: 'Welcome to HackLab. Start your first challenge today!', timestamp: new Date().toISOString(), read: false },
+    { id: 2, type: 'award', title: 'Achievement Unlocked', message: 'You have completed your first lab!', timestamp: new Date(Date.now() - 1000 * 60 * 60).toISOString(), read: true }
   ];
 
   // API Routes
@@ -180,6 +187,19 @@ async function startServer() {
       originalName: req.file ? req.file.originalname : null
     };
     rooms.push(newRoom);
+
+    // Create notification for new room
+    const newNotification = {
+      id: Date.now(),
+      type: 'new_room',
+      title: 'New Challenge!',
+      message: `A new challenge "${newRoom.title}" has been uploaded.`,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+    notifications.unshift(newNotification);
+    io.emit("notification-new", newNotification);
+
     res.json(newRoom);
   });
 
@@ -211,6 +231,15 @@ async function startServer() {
 
   app.get("/api/activity", (req, res) => {
     res.json(activityFeed.slice(0, 20));
+  });
+
+  app.get("/api/notifications", (req, res) => {
+    res.json(notifications.slice(0, 20));
+  });
+
+  app.post("/api/notifications/read", (req, res) => {
+    notifications.forEach(n => n.read = true);
+    res.json({ success: true });
   });
 
   app.post("/api/submissions", (req, res) => {
@@ -249,9 +278,33 @@ async function startServer() {
         };
         activityFeed.unshift(newActivity);
         
+        // Add to notifications
+        const solveNotification = {
+          id: Date.now() + 1,
+          type: 'solve',
+          title: 'Challenge Completed!',
+          message: `You successfully solved ${foundTask.question} in ${foundRoom.title}.`,
+          timestamp: new Date().toISOString(),
+          read: false
+        };
+        notifications.unshift(solveNotification);
+        io.emit("notification-new", solveNotification);
+
         // Broadcast updates
         io.emit("leaderboard-update", [...users].sort((a, b) => b.points - a.points));
         io.emit("activity-update", newActivity);
+        
+        // Notify about leaderboard change if rank changed (simplified)
+        const rankNotification = {
+          id: Date.now() + 2,
+          type: 'leaderboard',
+          title: 'Leaderboard Update',
+          message: `${user.username} just earned ${foundTask.points} points!`,
+          timestamp: new Date().toISOString(),
+          read: false
+        };
+        notifications.unshift(rankNotification);
+        io.emit("notification-new", rankNotification);
       }
       
       res.json({ status: "correct", points: foundTask.points });
