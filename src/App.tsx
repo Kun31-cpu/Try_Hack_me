@@ -3293,7 +3293,15 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
                 </div>
               </div>
 
-              <button className="px-8 py-3 bg-[#a3e635] hover:bg-[#bef264] text-black font-black rounded-xl transition-all shadow-lg shadow-[#a3e635]/20">
+              <button 
+                onClick={handleUpdateRoom}
+                disabled={isUpdating}
+                className={cn(
+                  "px-8 py-3 bg-[#a3e635] hover:bg-[#bef264] text-black font-black rounded-xl transition-all shadow-lg shadow-[#a3e635]/20 flex items-center gap-2",
+                  isUpdating && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 Update room
               </button>
             </div>
@@ -3440,7 +3448,15 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
                 )}
               </div>
 
-              <button className="px-8 py-3 bg-[#a3e635] hover:bg-[#bef264] text-black font-black rounded-xl transition-all shadow-lg shadow-[#a3e635]/20">
+              <button 
+                onClick={handleUpdateRoom}
+                disabled={isUpdating}
+                className={cn(
+                  "px-8 py-3 bg-[#a3e635] hover:bg-[#bef264] text-black font-black rounded-xl transition-all shadow-lg shadow-[#a3e635]/20 flex items-center gap-2",
+                  isUpdating && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 Update room
               </button>
             </div>
@@ -3640,7 +3656,15 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
                 </div>
               </div>
 
-              <button className="px-8 py-3 bg-[#a3e635] hover:bg-[#bef264] text-black font-black rounded-xl transition-all shadow-lg shadow-[#a3e635]/20">
+              <button 
+                onClick={handleUpdateRoom}
+                disabled={isUpdating}
+                className={cn(
+                  "px-8 py-3 bg-[#a3e635] hover:bg-[#bef264] text-black font-black rounded-xl transition-all shadow-lg shadow-[#a3e635]/20 flex items-center gap-2",
+                  isUpdating && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                 Update room
               </button>
             </div>
