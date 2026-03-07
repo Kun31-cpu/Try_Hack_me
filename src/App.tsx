@@ -66,7 +66,9 @@ import {
   Crown,
   Share2,
   Camera,
-  Facebook
+  Facebook,
+  Save,
+  Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -870,15 +872,41 @@ const SavedLabs = ({ rooms, savedLabs, onToggleSave, setView, setSelectedRoomId 
   );
 };
 
-const FeedbackPage = ({ addToast }: { addToast: (m: string, t?: 'success' | 'error' | 'info') => void }) => {
+const FeedbackPage = ({ addToast, user }: { addToast: (m: string, t?: 'success' | 'error' | 'info') => void, user: User | null }) => {
   const [feedback, setFeedback] = useState('');
   const [isSent, setIsSent] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!feedback.trim()) return;
-    setIsSent(true);
-    addToast('Feedback sent successfully!', 'success');
+    
+    setIsSending(true);
+    try {
+      const response = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          feedback,
+          username: user?.username,
+          userEmail: user?.email
+        })
+      });
+
+      if (response.ok) {
+        setIsSent(true);
+        addToast('Feedback sent successfully!', 'success');
+      } else {
+        throw new Error('Failed to send feedback');
+      }
+    } catch (error) {
+      console.error('Error sending feedback:', error);
+      addToast('Failed to send feedback. Please try again later.', 'error');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   if (isSent) {
@@ -926,9 +954,17 @@ const FeedbackPage = ({ addToast }: { addToast: (m: string, t?: 'success' | 'err
 
           <button 
             type="submit"
-            className="w-full py-4 bg-[#a3e635] hover:bg-[#bef264] text-black font-black rounded-xl transition-all shadow-lg shadow-[#a3e635]/20 uppercase tracking-widest text-sm"
+            disabled={isSending}
+            className="w-full py-4 bg-[#a3e635] hover:bg-[#bef264] text-black font-black rounded-xl transition-all shadow-lg shadow-[#a3e635]/20 uppercase tracking-widest text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            Send Feedback
+            {isSending ? (
+              <>
+                <LoadingSpinner size="sm" />
+                Sending...
+              </>
+            ) : (
+              'Send Feedback'
+            )}
           </button>
         </div>
 
@@ -1040,7 +1076,7 @@ const BadgesPage = ({ user }: { user: User }) => {
   );
 };
 
-const RoomDetail = ({ roomId, token, onBack, addToast, onRoomComplete, presence }: { roomId: number, token: string, onBack: () => void, addToast: (m: string, t?: 'success' | 'error' | 'info') => void, onRoomComplete?: (id: number) => void, presence: { roomId: number, count: number } }) => {
+const RoomDetail = ({ roomId, token, onBack, addToast, onRoomComplete, presence, user }: { roomId: number, token: string, onBack: () => void, addToast: (m: string, t?: 'success' | 'error' | 'info') => void, onRoomComplete?: (id: number) => void, presence: { roomId: number, count: number }, user: User | null }) => {
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [answers, setAnswers] = useState<Record<number, string>>({});
@@ -1057,6 +1093,7 @@ const RoomDetail = ({ roomId, token, onBack, addToast, onRoomComplete, presence 
   const [sshKey, setSshKey] = useState<{ publicKey: string, privateKey: string } | null>(null);
   const [isGeneratingKey, setIsGeneratingKey] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [isFlashing, setIsFlashing] = useState(false);
 
   useEffect(() => {
     // Fetch existing SSH key on mount
@@ -1159,21 +1196,54 @@ const RoomDetail = ({ roomId, token, onBack, addToast, onRoomComplete, presence 
     setHintsLoading(prev => ({ ...prev, [task.id]: false }));
   };
 
-  const handleStartMachine = () => {
+  const handleStartMachine = async () => {
     setMachineStatus('starting');
     setDeployProgress(0);
     addToast('Starting virtual machine...', 'info');
+    
+    // Sync with backend
+    try {
+      await fetch(`/api/user/machines/${roomId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'starting', username: user?.username })
+      });
+    } catch (e) { console.error(e); }
+
     const interval = setInterval(() => {
       setDeployProgress(prev => {
         if (prev >= 100) {
           clearInterval(interval);
           setMachineStatus('running');
           addToast('Machine is ready!', 'success');
+          
+          // Final sync
+          fetch(`/api/user/machines/${roomId}/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'running', username: user?.username })
+          }).catch(console.error);
+          
           return 100;
         }
         return prev + 5;
       });
     }, 200);
+  };
+
+  const handleStopMachine = async () => {
+    setMachineStatus('stopped');
+    setDeployProgress(0);
+    addToast('Machine stopped successfully.', 'info');
+    
+    // Sync with backend
+    try {
+      await fetch(`/api/user/machines/${roomId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'stopped', username: user?.username })
+      });
+    } catch (e) { console.error(e); }
   };
 
   const handleDownloadVPN = () => {
@@ -1229,86 +1299,215 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
     setTimeout(() => setVpnConnected(true), 2000);
   };
 
-  const handleDownloadBadge = () => {
-    if (!room) return;
-    addToast('Generating your achievement badge...', 'info');
+  const generateCertificateCanvas = () => {
+    if (!room) return null;
     
     const canvas = document.createElement('canvas');
-    canvas.width = 800;
-    canvas.height = 600;
+    canvas.width = 1200;
+    canvas.height = 850;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) return null;
 
-    // Background
-    ctx.fillStyle = '#0a0a0a';
+    // 1. Background (White)
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Border
-    ctx.strokeStyle = '#a3e635';
-    ctx.lineWidth = 15;
-    ctx.strokeRect(30, 30, canvas.width - 60, canvas.height - 60);
-    
-    // Inner border
-    ctx.strokeStyle = 'rgba(163, 230, 53, 0.3)';
-    ctx.lineWidth = 2;
+    // 2. Decorative Corner Shapes (Blue and Gold)
+    // Top Left
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(300, 0);
+    ctx.bezierCurveTo(200, 100, 100, 200, 0, 300);
+    ctx.closePath();
+    ctx.fillStyle = '#0f172a'; // Deep Blue
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(250, 0);
+    ctx.bezierCurveTo(180, 80, 80, 180, 0, 250);
+    ctx.closePath();
+    ctx.fillStyle = '#facc15'; // Gold
+    ctx.fill();
+
+    // Bottom Right
+    ctx.beginPath();
+    ctx.moveTo(canvas.width, canvas.height);
+    ctx.lineTo(canvas.width - 300, canvas.height);
+    ctx.bezierCurveTo(canvas.width - 200, canvas.height - 100, canvas.width - 100, canvas.height - 200, canvas.width, canvas.height - 300);
+    ctx.closePath();
+    ctx.fillStyle = '#0f172a';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(canvas.width, canvas.height);
+    ctx.lineTo(canvas.width - 250, canvas.height);
+    ctx.bezierCurveTo(canvas.width - 180, canvas.height - 80, canvas.width - 80, canvas.height - 180, canvas.width, canvas.height - 250);
+    ctx.closePath();
+    ctx.fillStyle = '#facc15';
+    ctx.fill();
+
+    // 3. Gold Border
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(40, 40, canvas.width - 80, canvas.height - 80);
+    ctx.lineWidth = 1;
     ctx.strokeRect(50, 50, canvas.width - 100, canvas.height - 100);
 
-    // Text
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 32px Inter, sans-serif';
+    // 4. Header: CERTIFICATE
+    ctx.fillStyle = '#1e3a8a'; // Darker Blue
+    ctx.font = '900 80px "Inter", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('CERTIFICATE OF COMPLETION', canvas.width / 2, 120);
+    ctx.fillText('CERTIFICATE', canvas.width / 2, 180);
 
-    ctx.fillStyle = '#a3e635';
-    ctx.font = '900 56px Inter, sans-serif';
-    ctx.fillText(room.title.toUpperCase(), canvas.width / 2, 260);
-
-    ctx.fillStyle = '#71717a';
-    ctx.font = '500 20px Inter, sans-serif';
-    ctx.fillText('Successfully compromised by', canvas.width / 2, 330);
-
-    const savedUser = localStorage.getItem('user');
-    const username = savedUser ? JSON.parse(savedUser).username : 'GHOST_OPERATOR';
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 42px Inter, sans-serif';
-    ctx.fillText(username.toUpperCase(), canvas.width / 2, 390);
-
-    ctx.fillStyle = '#a3e635';
-    ctx.font = '900 24px Inter, sans-serif';
-    ctx.fillText('MISSION ACCOMPLISHED', canvas.width / 2, 510);
+    // 5. Sub-header: OF PARTICIPATION (Pill shape)
+    const pillWidth = 400;
+    const pillHeight = 60;
+    const pillX = (canvas.width - pillWidth) / 2;
+    const pillY = 210;
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillWidth, pillHeight, 30);
+    ctx.fillStyle = '#1e3a8a';
+    ctx.fill();
     
-    ctx.fillStyle = '#3f3f46';
-    ctx.font = '500 14px Inter, sans-serif';
-    ctx.fillText(`VERIFIED ON HACKLAB NETWORK | ${new Date().toLocaleDateString()}`, canvas.width / 2, 550);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 24px "Inter", sans-serif';
+    ctx.fillText('OF PARTICIPATION', canvas.width / 2, pillY + 38);
 
-    // Download
+    // 6. Text: This participation certificate is given to
+    ctx.fillStyle = '#475569';
+    ctx.font = '500 20px "Inter", sans-serif';
+    ctx.fillText('This participation certificate is given to', canvas.width / 2, 330);
+
+    // 7. User Name (Cursive)
+    const username = user?.full_name || user?.username || 'GHOST_OPERATOR';
+    ctx.fillStyle = '#1e3a8a';
+    ctx.font = 'italic 700 80px "Georgia", serif'; // Using Georgia for a classic look
+    ctx.fillText(username, canvas.width / 2, 440);
+
+    // 8. Description
+    ctx.fillStyle = '#475569';
+    ctx.font = '500 22px "Inter", sans-serif';
+    ctx.fillText(`Who have successfully completed the laboratory on "${room.title}"`, canvas.width / 2, 520);
+    
+    const dateStr = new Date().toLocaleDateString('en-US', { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
+    ctx.fillText(`hosted by the HackLab Platform on ${dateStr}`, canvas.width / 2, 560);
+
+    // 9. Signatures
+    // Signature 1: Chairman
+    ctx.strokeStyle = '#1e3a8a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(350, 750);
+    ctx.lineTo(550, 750);
+    ctx.stroke();
+    
+    ctx.fillStyle = '#1e3a8a';
+    ctx.font = 'italic 32px "Brush Script MT", cursive, sans-serif';
+    ctx.fillText('Cla Rodriguez', 450, 730);
+    
+    ctx.fillStyle = '#1e3a8a';
+    ctx.font = '700 16px "Inter", sans-serif';
+    ctx.fillText('Chairman', 450, 680);
+    ctx.font = '700 14px "Inter", sans-serif';
+    ctx.fillText('Cla Rodriguez', 450, 775);
+
+    // Signature 2: Representative
+    ctx.beginPath();
+    ctx.moveTo(650, 750);
+    ctx.lineTo(850, 750);
+    ctx.stroke();
+    
+    ctx.fillStyle = '#1e3a8a';
+    ctx.font = 'italic 32px "Brush Script MT", cursive, sans-serif';
+    ctx.fillText('Chad Gibbons', 750, 730);
+    
+    ctx.fillStyle = '#1e3a8a';
+    ctx.font = '700 16px "Inter", sans-serif';
+    ctx.fillText('Representative', 750, 680);
+    ctx.font = '700 14px "Inter", sans-serif';
+    ctx.fillText('Chad Gibbons', 750, 775);
+
+    // 10. Gold Seal (Top Right)
+    const sealX = canvas.width - 180;
+    const sealY = 150;
+    
+    // Seal Ribbons
+    ctx.fillStyle = '#facc15';
+    ctx.beginPath();
+    ctx.moveTo(sealX - 20, sealY + 40);
+    ctx.lineTo(sealX - 40, sealY + 120);
+    ctx.lineTo(sealX - 10, sealY + 100);
+    ctx.lineTo(sealX + 20, sealY + 120);
+    ctx.lineTo(sealX, sealY + 40);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(sealX, sealY, 50, 0, Math.PI * 2);
+    ctx.fillStyle = '#facc15';
+    ctx.fill();
+    ctx.strokeStyle = '#eab308';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    
+    // Inner seal circle
+    ctx.beginPath();
+    ctx.arc(sealX, sealY, 40, 0, Math.PI * 2);
+    ctx.stroke();
+
+    return canvas;
+  };
+
+  const handleDownloadBadge = () => {
+    if (!room) return;
+    addToast('Generating your official certificate...', 'info');
+    
+    const canvas = generateCertificateCanvas();
+    if (!canvas) return;
+
+    // 11. Download
     const link = document.createElement('a');
-    link.download = `HackLab_${room.title.replace(/\s+/g, '_')}_Badge.png`;
+    link.download = `HackLab_Certificate_${room.title.replace(/\s+/g, '_')}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
-    addToast('Badge downloaded successfully!', 'success');
+    addToast('Certificate downloaded successfully!', 'success');
   };
 
   const handleShareSuccess = async () => {
-    const shareData = {
-      title: 'HackLab Achievement',
-      text: `I just completed the ${room?.title} lab on HackLab! Check it out:`,
-      url: window.location.href
-    };
-
+    if (!room) return;
+    addToast('Preparing certificate for sharing...', 'info');
+    
     try {
-      if (navigator.share) {
-        await navigator.share(shareData);
+      const canvas = generateCertificateCanvas();
+      if (!canvas) return;
+
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) return;
+
+      const file = new File([blob], `HackLab_Certificate_${room.title.replace(/\s+/g, '_')}.png`, { type: 'image/png' });
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'HackLab Achievement Unlocked!',
+          text: `I just completed the ${room.title} lab on HackLab! 🚀 #HackLab #CyberSecurity`,
+        });
         addToast('Shared successfully!', 'success');
       } else {
-        await navigator.clipboard.writeText(`${shareData.text} ${shareData.url}`);
-        addToast('Link copied to clipboard!', 'success');
+        // Fallback to clipboard link if file sharing is not supported
+        const url = window.location.origin;
+        const text = `I just completed the ${room.title} lab on HackLab! 🚀 #HackLab #CyberSecurity ${url}`;
+        await navigator.clipboard.writeText(text);
+        addToast('Link copied to clipboard (file sharing not supported)', 'info');
       }
     } catch (err) {
       console.error('Error sharing:', err);
-      addToast('Failed to share. Link copied instead.', 'info');
-      navigator.clipboard.writeText(window.location.href);
+      addToast('Failed to share certificate', 'error');
     }
   };
 
@@ -1344,7 +1543,16 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
   return (
     <div className="max-w-7xl mx-auto p-6">
       <div className="flex items-center justify-between mb-8">
-        <button onClick={onBack} className="flex items-center gap-2 text-app-text hover:text-app-heading transition-colors font-bold text-sm">
+        <button 
+          onClick={() => {
+            if (machineStatus !== 'stopped') {
+              addToast('CRITICAL: Shutdown the machine before leaving the lab environment!', 'error');
+              return;
+            }
+            onBack();
+          }} 
+          className="flex items-center gap-2 text-app-text hover:text-app-heading transition-colors font-bold text-sm"
+        >
           <ChevronRight className="w-4 h-4 rotate-180" />
           Back to Labs
         </button>
@@ -1620,6 +1828,13 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
                   )}
 
                   <div className="flex flex-col gap-2">
+                    <button 
+                      onClick={handleStopMachine}
+                      className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-black rounded-xl border border-red-500/20 transition-all flex items-center justify-center gap-2"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      Stop Machine
+                    </button>
                     <div className="flex gap-2">
                       <button 
                         onClick={() => {
@@ -1825,116 +2040,115 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
               initial={{ scale: 0.9, y: 20, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.9, y: 20, opacity: 0 }}
-              className="w-full max-w-2xl bg-app-card border border-[#a3e635]/30 rounded-[2.5rem] overflow-hidden shadow-[0_0_100px_rgba(163,230,53,0.15)] relative"
+              className="w-full max-w-lg bg-app-card border border-[#a3e635]/30 rounded-[2rem] overflow-hidden shadow-[0_0_80px_rgba(163,230,53,0.15)] relative"
             >
-              <button 
-                onClick={() => setShowSuccessModal(false)}
-                className="absolute top-6 right-6 p-2 bg-white/5 hover:bg-white/10 rounded-full text-zinc-500 hover:text-white transition-all z-20"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              {/* Header Actions */}
+              <div className="absolute top-6 right-6 flex items-center gap-2 z-20">
+                <button 
+                  onClick={() => setShowSuccessModal(false)}
+                  className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-[10px] font-black text-zinc-500 hover:text-white transition-all uppercase tracking-widest flex items-center gap-1.5"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Skip
+                </button>
+                <button 
+                  onClick={() => {
+                    setShowSuccessModal(false);
+                    onBack();
+                  }}
+                  className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 rounded-lg text-[10px] font-black text-red-500 transition-all uppercase tracking-widest flex items-center gap-1.5"
+                >
+                  <X className="w-3 h-3" />
+                  Cut
+                </button>
+              </div>
 
               {/* Decorative elements */}
               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#a3e635] to-transparent opacity-50" />
               <div className="absolute -top-24 -left-24 w-48 h-48 bg-[#a3e635]/10 blur-[100px] rounded-full" />
-              <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-[#a3e635]/10 blur-[100px] rounded-full" />
 
-              <div className="p-8 md:p-12 flex flex-col items-center text-center relative z-10">
+              <div className="p-8 md:p-10 flex flex-col items-center text-center relative z-10">
                 <motion.div
                   initial={{ rotate: -10, scale: 0 }}
                   animate={{ rotate: 0, scale: 1 }}
                   transition={{ type: "spring", damping: 12, delay: 0.2 }}
-                  className="w-32 h-32 bg-gradient-to-br from-[#a3e635] to-emerald-600 rounded-3xl flex items-center justify-center shadow-[0_20px_40px_rgba(163,230,53,0.3)] mb-8 relative"
+                  className="w-24 h-24 bg-gradient-to-br from-[#a3e635] to-emerald-600 rounded-2xl flex items-center justify-center shadow-[0_15px_30px_rgba(163,230,53,0.3)] mb-6 relative"
                 >
-                  <Trophy className="w-16 h-16 text-black" strokeWidth={1.5} />
-                  <motion.div 
-                    animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
-                    transition={{ duration: 2, repeat: Infinity }}
-                    className="absolute -inset-4 border-2 border-[#a3e635]/30 rounded-[2.5rem] -z-10"
-                  />
+                  <Trophy className="w-12 h-12 text-black" strokeWidth={1.5} />
                 </motion.div>
 
-                <h2 className="text-4xl md:text-5xl font-black text-white mb-4 tracking-tight">
+                <h2 className="text-3xl font-black text-white mb-2 tracking-tight">
                   MISSION ACCOMPLISHED
                 </h2>
-                <p className="text-zinc-400 text-lg mb-10 max-w-md leading-relaxed">
+                <p className="text-zinc-400 text-sm mb-8 max-w-xs leading-relaxed">
                   You've successfully compromised <span className="text-[#a3e635] font-bold">{room.title}</span>. 
-                  Your expertise has been recorded in the global archives.
                 </p>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full mb-12">
-                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Points Earned</div>
-                    <div className="text-2xl font-black text-[#a3e635]">+{room.tasks?.reduce((acc, t) => acc + t.points, 0)}</div>
+                <div className="grid grid-cols-2 gap-3 w-full mb-8">
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+                    <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-0.5">Points</div>
+                    <div className="text-xl font-black text-[#a3e635]">+{room.tasks?.reduce((acc, t) => acc + t.points, 0)}</div>
                   </div>
-                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Rank Up</div>
-                    <div className="text-2xl font-black text-white">#124</div>
-                  </div>
-                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Time Taken</div>
-                    <div className="text-2xl font-black text-white">42m</div>
-                  </div>
-                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">Accuracy</div>
-                    <div className="text-2xl font-black text-white">94%</div>
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-3">
+                    <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-0.5">Time</div>
+                    <div className="text-xl font-black text-white">42m</div>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap justify-center gap-4 w-full">
+                <div className="flex flex-col gap-3 w-full">
                   <button 
                     onClick={handleDownloadBadge}
-                    className="flex-1 min-w-[200px] py-4 bg-[#a3e635] text-black font-black rounded-2xl hover:bg-[#bef264] transition-all flex items-center justify-center gap-3 shadow-xl shadow-[#a3e635]/20"
+                    className="w-full py-3.5 bg-[#a3e635] text-black font-black rounded-xl hover:bg-[#bef264] transition-all flex items-center justify-center gap-2.5 shadow-lg shadow-[#a3e635]/20 text-xs uppercase tracking-widest"
                   >
-                    <Download className="w-5 h-5" />
-                    Download Badge
+                    <Download className="w-4 h-4" />
+                    Download Certificate
                   </button>
                   <button 
                     onClick={handleShareSuccess}
-                    className="flex-1 min-w-[200px] py-4 bg-white/5 border border-white/10 text-white font-black rounded-2xl hover:bg-white/10 transition-all flex items-center justify-center gap-3"
+                    className="w-full py-3.5 bg-white/5 border border-white/10 text-white font-black rounded-xl hover:bg-white/10 transition-all flex items-center justify-center gap-2.5 text-xs uppercase tracking-widest"
                   >
-                    <Share2 className="w-5 h-5" />
-                    Share Success
+                    <Share2 className="w-4 h-4" />
+                    Share Certificate
                   </button>
                 </div>
 
-                <div className="mt-8 flex items-center gap-6">
-                  <button 
-                    onClick={() => shareToSocial('twitter')}
-                    className="text-zinc-500 hover:text-[#a3e635] transition-colors"
-                  >
-                    <Twitter className="w-5 h-5" />
+                <div className="mt-6 flex items-center gap-4">
+                  <button onClick={() => shareToSocial('twitter')} className="p-2 text-zinc-500 hover:text-[#a3e635] transition-colors bg-white/5 rounded-lg">
+                    <Twitter className="w-4 h-4" />
                   </button>
-                  <button 
-                    onClick={() => shareToSocial('linkedin')}
-                    className="text-zinc-500 hover:text-[#a3e635] transition-colors"
-                  >
-                    <Linkedin className="w-5 h-5" />
+                  <button onClick={() => shareToSocial('linkedin')} className="p-2 text-zinc-500 hover:text-[#a3e635] transition-colors bg-white/5 rounded-lg">
+                    <Linkedin className="w-4 h-4" />
                   </button>
-                  <button 
-                    onClick={() => shareToSocial('facebook')}
-                    className="text-zinc-500 hover:text-[#a3e635] transition-colors"
-                  >
-                    <Facebook className="w-5 h-5" />
+                  <button onClick={() => shareToSocial('facebook')} className="p-2 text-zinc-500 hover:text-[#a3e635] transition-colors bg-white/5 rounded-lg">
+                    <Facebook className="w-4 h-4" />
                   </button>
                   <button 
                     onClick={() => {
+                      setIsFlashing(true);
                       addToast('Capturing achievement photo...', 'info');
-                      handleDownloadBadge();
+                      setTimeout(() => {
+                        setIsFlashing(false);
+                        handleDownloadBadge();
+                      }, 400);
                     }}
-                    className="text-zinc-500 hover:text-[#a3e635] transition-colors"
+                    className="p-2 text-zinc-500 hover:text-[#a3e635] transition-colors bg-white/5 rounded-lg"
                   >
-                    <Camera className="w-5 h-5" />
+                    <Camera className="w-4 h-4" />
                   </button>
                 </div>
-
-                <button 
-                  onClick={onBack}
-                  className="mt-12 text-[10px] font-black text-zinc-500 hover:text-[#a3e635] uppercase tracking-[0.3em] transition-all"
-                >
-                  Return to Headquarters
-                </button>
               </div>
+
+              {/* Flash Effect */}
+              <AnimatePresence>
+                {isFlashing && (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="absolute inset-0 bg-white z-[100]"
+                  />
+                )}
+              </AnimatePresence>
             </motion.div>
           </motion.div>
         )}
@@ -2617,11 +2831,48 @@ const ManageRooms = ({ rooms, setView, setSelectedRoomId }: { rooms: Room[], set
 };
 
 const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomId: number, rooms: Room[], onBack: () => void, addToast: (m: string, t?: 'success' | 'error' | 'info') => void, onUpdate: () => void }) => {
+  const room = rooms.find(r => r.id === roomId);
   const [activeTab, setActiveTab] = useState('general');
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [generatedVideoUrl, setGeneratedVideoUrl] = useState<string | null>(null);
-  const room = rooms.find(r => r.id === roomId);
+  
+  // Form states
+  const [title, setTitle] = useState(room?.title || '');
+  const [description, setDescription] = useState(room?.description || '');
+  const [roomCode, setRoomCode] = useState(room?.title.toLowerCase().replace(/\s+/g, '-') || '');
+  const [difficulty, setDifficulty] = useState<string>(room?.difficulty || 'Easy');
+  const [type, setType] = useState('Challenge');
+  const [completionTime, setCompletionTime] = useState(45);
+  const [isPublic, setIsPublic] = useState(true);
+  const [machineIp, setMachineIp] = useState(room?.machine_ip || '10.10.123.45');
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  
+  // Enhanced states
+  const [machineOs, setMachineOs] = useState('Linux');
+  const [themeColor, setThemeColor] = useState('#a3e635');
+  const [certificateTemplate, setCertificateTemplate] = useState('Standard');
+  const [videoAutoplay, setVideoAutoplay] = useState(false);
+  const [prerequisites, setPrerequisites] = useState<string[]>(['Basic Linux', 'Networking Fundamentals']);
+  const [learningPath, setLearningPath] = useState('Offensive Security');
+
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [bannerUrl, setBannerUrl] = useState(`https://picsum.photos/seed/${room.id}-banner/1200/400`);
+  const [avatarUrl, setAvatarUrl] = useState(`https://picsum.photos/seed/${room.id}-avatar/200/200`);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'banner' | 'avatar') => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (type === 'banner') setBannerUrl(reader.result as string);
+        else setAvatarUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const sidebarItems = [
     { id: 'general', label: 'General Settings', icon: Settings },
@@ -2639,6 +2890,34 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
   ];
 
   if (!room) return null;
+
+  const handleUpdateRoom = async () => {
+    setIsUpdating(true);
+    try {
+      const res = await fetch(`/api/rooms/${roomId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          description,
+          difficulty,
+          machine_ip: machineIp,
+          // Add other fields as needed by your API
+        })
+      });
+      
+      if (res.ok) {
+        addToast('Room updated successfully!', 'success');
+        onUpdate();
+      } else {
+        throw new Error('Failed to update room');
+      }
+    } catch (err) {
+      addToast('Error updating room settings', 'error');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-12">
@@ -2681,9 +2960,44 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
         <div className="lg:col-span-9 bg-app-card border border-app-border rounded-3xl p-10 shadow-xl">
           {activeTab === 'general' && (
             <div className="space-y-10">
-              <div className="flex items-center gap-3 mb-8">
-                <Settings className="w-6 h-6 text-[#a3e635]" />
-                <h3 className="text-2xl font-black text-app-heading tracking-tight">General</h3>
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <Settings className="w-6 h-6 text-[#a3e635]" />
+                  <h3 className="text-2xl font-black text-app-heading tracking-tight">General Settings</h3>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}/room/${roomCode}`);
+                      addToast('Room link copied to clipboard!', 'success');
+                    }}
+                    className="p-2.5 bg-app-heading/5 hover:bg-app-heading/10 text-app-heading rounded-xl border border-app-border transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"
+                    title="Copy Room Link"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Copy Link
+                  </button>
+                  <button 
+                    onClick={() => setShowPreview(true)}
+                    className="p-2.5 bg-app-heading/5 hover:bg-app-heading/10 text-app-heading rounded-xl border border-app-border transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    Preview
+                  </button>
+                  <div className="h-8 w-px bg-app-border mx-1" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Visibility:</span>
+                    <button 
+                      onClick={() => setIsPublic(!isPublic)}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border",
+                        isPublic ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-red-500/10 text-red-500 border-red-500/20"
+                      )}
+                    >
+                      {isPublic ? 'Public' : 'Private'}
+                    </button>
+                  </div>
+                </div>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -2691,29 +3005,41 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Title*</label>
                   <input 
                     type="text" 
-                    defaultValue={room.title}
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value.slice(0, 45))}
                     className="w-full bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none focus:border-[#a3e635] transition-all"
                   />
-                  <p className="text-[10px] text-zinc-500 font-medium px-1">Max character count is 45.</p>
+                  <div className="flex justify-between px-1">
+                    <p className="text-[10px] text-zinc-500 font-medium">Max character count is 45.</p>
+                    <p className={cn("text-[10px] font-black", title.length >= 40 ? "text-red-500" : "text-zinc-500")}>{title.length}/45</p>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Description*</label>
                   <textarea 
-                    defaultValue={room.description}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value.slice(0, 250))}
                     className="w-full bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none focus:border-[#a3e635] transition-all h-32 resize-none"
                   />
-                  <p className="text-[10px] text-zinc-500 font-medium px-1">Max character count is 250.</p>
+                  <div className="flex justify-between px-1">
+                    <p className="text-[10px] text-zinc-500 font-medium">Max character count is 250.</p>
+                    <p className={cn("text-[10px] font-black", description.length >= 240 ? "text-red-500" : "text-zinc-500")}>{description.length}/250</p>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Room code*</label>
                   <div className="flex gap-2">
                     <input 
                       type="text" 
-                      defaultValue={room.title.toLowerCase().replace(/\s+/g, '-')}
+                      value={roomCode}
+                      onChange={(e) => setRoomCode(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
                       className="flex-1 bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none focus:border-[#a3e635] transition-all"
                     />
-                    <button className="px-4 py-2 bg-app-heading/5 hover:bg-app-heading/10 text-app-heading text-xs font-black rounded-xl border border-app-border transition-all">
-                      Edit
+                    <button 
+                      onClick={() => setRoomCode(title.toLowerCase().replace(/\s+/g, '-'))}
+                      className="px-4 py-2 bg-app-heading/5 hover:bg-app-heading/10 text-app-heading text-xs font-black rounded-xl border border-app-border transition-all"
+                    >
+                      Auto
                     </button>
                   </div>
                 </div>
@@ -2722,11 +3048,23 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
                   <div className="flex gap-2">
                     <input 
                       type="number" 
-                      defaultValue={45}
+                      value={completionTime}
+                      onChange={(e) => setCompletionTime(parseInt(e.target.value) || 0)}
                       className="flex-1 bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none focus:border-[#a3e635] transition-all"
                     />
                     <span className="flex items-center text-xs text-zinc-500 font-black uppercase tracking-widest">minutes</span>
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Machine IP Address*</label>
+                  <input 
+                    type="text" 
+                    value={machineIp}
+                    onChange={(e) => setMachineIp(e.target.value)}
+                    placeholder="e.g. 10.10.123.45"
+                    className="w-full bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none focus:border-[#a3e635] transition-all"
+                  />
+                  <p className="text-[10px] text-zinc-500 font-medium px-1">The IP address users will target in this lab.</p>
                 </div>
               </div>
 
@@ -2735,19 +3073,20 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
               <div className="space-y-8">
                 <div className="flex items-center gap-3">
                   <Monitor className="w-6 h-6 text-[#a3e635]" />
-                  <h3 className="text-xl font-black text-app-heading tracking-tight">Room Settings</h3>
+                  <h3 className="text-xl font-black text-app-heading tracking-tight">Room Classification</h3>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Difficulty</label>
                     <div className="grid grid-cols-2 gap-3">
                       {['Info', 'Easy', 'Medium', 'Hard', 'Insane'].map(d => (
                         <button 
                           key={d}
+                          onClick={() => setDifficulty(d)}
                           className={cn(
                             "px-4 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all",
-                            room.difficulty === d ? "bg-[#a3e635] text-black border-[#a3e635]" : "bg-app-heading/5 text-zinc-500 border-app-border hover:border-app-heading/10"
+                            difficulty === d ? "bg-[#a3e635] text-black border-[#a3e635]" : "bg-app-heading/5 text-zinc-500 border-app-border hover:border-app-heading/10"
                           )}
                         >
                           {d}
@@ -2758,13 +3097,14 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
 
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Type</label>
-                    <div className="flex gap-3">
+                    <div className="flex flex-col gap-3">
                       {['Challenge', 'Walkthrough'].map(t => (
                         <button 
                           key={t}
+                          onClick={() => setType(t)}
                           className={cn(
-                            "flex-1 px-4 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all",
-                            t === 'Challenge' ? "bg-[#a3e635] text-black border-[#a3e635]" : "bg-app-heading/5 text-zinc-500 border-app-border hover:border-app-heading/10"
+                            "w-full px-4 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all",
+                            type === t ? "bg-[#a3e635] text-black border-[#a3e635]" : "bg-app-heading/5 text-zinc-500 border-app-border hover:border-app-heading/10"
                           )}
                         >
                           {t}
@@ -2772,12 +3112,80 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
                       ))}
                     </div>
                   </div>
+
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Machine OS</label>
+                    <div className="flex flex-col gap-3">
+                      {['Linux', 'Windows', 'MacOS'].map(os => (
+                        <button 
+                          key={os}
+                          onClick={() => setMachineOs(os)}
+                          className={cn(
+                            "w-full px-4 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all",
+                            machineOs === os ? "bg-[#a3e635] text-black border-[#a3e635]" : "bg-app-heading/5 text-zinc-500 border-app-border hover:border-app-heading/10"
+                          )}
+                        >
+                          {os}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <button className="px-8 py-3 bg-[#a3e635] hover:bg-[#bef264] text-black font-black rounded-xl transition-all shadow-lg shadow-[#a3e635]/20">
-                Update room
-              </button>
+              <div className="h-px bg-app-border" />
+
+              <div className="space-y-8">
+                <div className="flex items-center gap-3">
+                  <Shield className="w-6 h-6 text-[#a3e635]" />
+                  <h3 className="text-xl font-black text-app-heading tracking-tight">Advanced Configuration</h3>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="flex items-center justify-between p-4 bg-app-heading/5 border border-app-border rounded-xl">
+                    <div>
+                      <h4 className="text-xs font-black text-app-heading uppercase tracking-widest">Enable Hints</h4>
+                      <p className="text-[10px] text-zinc-500">Allow users to request AI hints.</p>
+                    </div>
+                    <button className="w-10 h-5 bg-[#a3e635] rounded-full relative">
+                      <div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full" />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-app-heading/5 border border-app-border rounded-xl">
+                    <div>
+                      <h4 className="text-xs font-black text-app-heading uppercase tracking-widest">Show Leaderboard</h4>
+                      <p className="text-[10px] text-zinc-500">Display top solvers for this room.</p>
+                    </div>
+                    <button className="w-10 h-5 bg-[#a3e635] rounded-full relative">
+                      <div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 pt-4">
+                <button 
+                  onClick={handleUpdateRoom}
+                  disabled={isUpdating}
+                  className={cn(
+                    "px-8 py-3 bg-[#a3e635] hover:bg-[#bef264] text-black font-black rounded-xl transition-all shadow-lg shadow-[#a3e635]/20 flex items-center gap-2",
+                    isUpdating && "opacity-50 cursor-not-allowed"
+                  )}
+                >
+                  {isUpdating ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Update room settings
+                </button>
+                <button 
+                  onClick={() => {
+                    setTitle(room.title);
+                    setDescription(room.description);
+                    setDifficulty(room.difficulty);
+                    setMachineIp(room.machine_ip || '');
+                  }}
+                  className="px-8 py-3 bg-app-heading/5 hover:bg-app-heading/10 text-app-heading text-xs font-black rounded-xl border border-app-border transition-all"
+                >
+                  Reset changes
+                </button>
+              </div>
             </div>
           )}
 
@@ -2791,10 +3199,22 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
               <div className="space-y-8">
                 <div className="space-y-4">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Banner</label>
+                  <input 
+                    type="file" 
+                    ref={bannerInputRef} 
+                    className="hidden" 
+                    accept="image/*"
+                    onChange={(e) => handleFileChange(e, 'banner')}
+                  />
                   <div className="w-full h-48 bg-black/20 rounded-2xl border border-app-border overflow-hidden relative group">
-                    <img src={`https://picsum.photos/seed/${room.id}-banner/1200/400`} className="w-full h-full object-cover opacity-60" />
+                    <img src={bannerUrl} className="w-full h-full object-cover opacity-60" />
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
-                      <button className="px-6 py-2 bg-white text-black text-xs font-black rounded-lg uppercase tracking-widest">Browse...</button>
+                      <button 
+                        onClick={() => bannerInputRef.current?.click()}
+                        className="px-6 py-2 bg-white text-black text-xs font-black rounded-lg uppercase tracking-widest"
+                      >
+                        Browse...
+                      </button>
                     </div>
                   </div>
                   <p className="text-[10px] text-zinc-500 font-medium px-1">Select a 1920 x 300 px PNG image with a resolution of 72 DPI to use as a banner image.</p>
@@ -2802,19 +3222,72 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
 
                 <div className="space-y-4">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Room avatar</label>
+                  <input 
+                    type="file" 
+                    ref={avatarInputRef} 
+                    className="hidden" 
+                    accept="image/*"
+                    onChange={(e) => handleFileChange(e, 'avatar')}
+                  />
                   <div className="flex items-center gap-8">
                     <div className="w-24 h-24 bg-black/20 rounded-2xl border border-app-border overflow-hidden relative group">
-                      <img src={`https://picsum.photos/seed/${room.id}-avatar/200/200`} className="w-full h-full object-cover opacity-60" />
+                      <img src={avatarUrl} className="w-full h-full object-cover opacity-60" />
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
-                        <button className="p-2 bg-white text-black rounded-lg"><Plus className="w-4 h-4" /></button>
+                        <button 
+                          onClick={() => avatarInputRef.current?.click()}
+                          className="p-2 bg-white text-black rounded-lg"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                     <div className="flex-1 space-y-4">
                       <div className="flex gap-3">
-                        <button className="px-6 py-2 bg-app-heading/5 hover:bg-app-heading/10 text-app-heading text-[10px] font-black rounded-lg border border-app-border transition-all uppercase tracking-widest">Choose a file...</button>
-                        <button className="px-6 py-2 bg-app-heading/5 hover:bg-app-heading/10 text-app-heading text-[10px] font-black rounded-lg border border-app-border transition-all uppercase tracking-widest">Generate random avatar</button>
+                        <button 
+                          onClick={() => avatarInputRef.current?.click()}
+                          className="px-6 py-2 bg-app-heading/5 hover:bg-app-heading/10 text-app-heading text-[10px] font-black rounded-lg border border-app-border transition-all uppercase tracking-widest"
+                        >
+                          Choose a file...
+                        </button>
+                        <button 
+                          onClick={() => setAvatarUrl(`https://picsum.photos/seed/${Math.random()}/200/200`)}
+                          className="px-6 py-2 bg-app-heading/5 hover:bg-app-heading/10 text-app-heading text-[10px] font-black rounded-lg border border-app-border transition-all uppercase tracking-widest"
+                        >
+                          Generate random avatar
+                        </button>
                       </div>
                       <p className="text-[10px] text-zinc-500 font-medium">Supported formats: SVG, JPG or PNG. Max file size is 5MB.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Theme & Branding</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="p-6 bg-app-heading/5 border border-app-border rounded-2xl space-y-4">
+                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block">Primary Theme Color</label>
+                      <div className="flex items-center gap-4">
+                        <input 
+                          type="color" 
+                          value={themeColor}
+                          onChange={(e) => setThemeColor(e.target.value)}
+                          className="w-12 h-12 rounded-lg bg-transparent border-none cursor-pointer"
+                        />
+                        <code className="text-xs font-mono text-app-heading bg-black/20 px-2 py-1 rounded uppercase">{themeColor}</code>
+                      </div>
+                    </div>
+                    <div className="p-6 bg-app-heading/5 border border-app-border rounded-2xl space-y-4">
+                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block">Certificate Template</label>
+                      <select 
+                        value={certificateTemplate}
+                        onChange={(e) => setCertificateTemplate(e.target.value)}
+                        className="w-full bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none focus:border-[#a3e635] transition-all"
+                      >
+                        <option>Standard</option>
+                        <option>Modern Dark</option>
+                        <option>Retro Terminal</option>
+                        <option>Elite Hacker</option>
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -2836,6 +3309,28 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
               <p className="text-sm text-zinc-500 font-medium leading-relaxed">Add up to two videos to your room by providing valid URLs. Each video can be individually toggled on or off. The videos will be embedded directly into your room to enhance the learning experience.</p>
 
               <div className="space-y-8">
+                <div className="flex items-center justify-between p-6 bg-app-heading/5 border border-app-border rounded-2xl">
+                  <div>
+                    <h4 className="text-sm font-black text-app-heading uppercase tracking-widest">Video Settings</h4>
+                    <p className="text-xs text-zinc-500">Configure how videos behave in your room.</p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Auto-play:</span>
+                    <button 
+                      onClick={() => setVideoAutoplay(!videoAutoplay)}
+                      className={cn(
+                        "w-10 h-5 rounded-full relative transition-all",
+                        videoAutoplay ? "bg-[#a3e635]" : "bg-zinc-700"
+                      )}
+                    >
+                      <div className={cn(
+                        "absolute top-1 w-3 h-3 bg-white rounded-full transition-all",
+                        videoAutoplay ? "right-1" : "left-1"
+                      )} />
+                    </button>
+                  </div>
+                </div>
+
                 <div className="p-6 bg-app-heading/5 border border-app-border rounded-2xl space-y-6">
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-black text-app-heading uppercase tracking-widest">First Video</h4>
@@ -2975,6 +3470,60 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
                 ))}
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="bg-app-heading/5 border border-app-border rounded-2xl p-6">
+                  <h4 className="text-sm font-black text-app-heading uppercase tracking-widest mb-6">Success Rate</h4>
+                  <div className="flex items-end gap-2 h-32">
+                    {[40, 65, 30, 85, 55, 90, 70].map((h, i) => (
+                      <div key={i} className="flex-1 bg-[#a3e635]/20 rounded-t-lg relative group">
+                        <div 
+                          style={{ height: `${h}%` }} 
+                          className="absolute bottom-0 left-0 right-0 bg-[#a3e635] rounded-t-lg transition-all group-hover:brightness-110"
+                        />
+                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[8px] font-black text-[#a3e635] opacity-0 group-hover:opacity-100 transition-opacity">
+                          {h}%
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-between mt-4">
+                    <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Mon</span>
+                    <span className="text-[8px] font-black text-zinc-500 uppercase tracking-widest">Sun</span>
+                  </div>
+                </div>
+
+                <div className="bg-app-heading/5 border border-app-border rounded-2xl p-6">
+                  <h4 className="text-sm font-black text-app-heading uppercase tracking-widest mb-6">User Ratings</h4>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        {[1, 2, 3, 4, 5].map(s => (
+                          <Star key={s} className={cn("w-3 h-3", s <= 4 ? "text-yellow-500 fill-yellow-500" : "text-zinc-600")} />
+                        ))}
+                      </div>
+                      <span className="text-xs font-black text-app-heading">4.2 / 5.0</span>
+                    </div>
+                    <div className="space-y-2">
+                      {[
+                        { label: 'Difficulty', val: 85 },
+                        { label: 'Quality', val: 92 },
+                        { label: 'Fun Factor', val: 78 }
+                      ].map(r => (
+                        <div key={r.label} className="space-y-1">
+                          <div className="flex justify-between text-[8px] font-black text-zinc-500 uppercase tracking-widest">
+                            <span>{r.label}</span>
+                            <span>{r.val}%</span>
+                          </div>
+                          <div className="h-1 bg-black/20 rounded-full overflow-hidden">
+                            <div style={{ width: `${r.val}%` }} className="h-full bg-[#a3e635]" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="bg-app-heading/5 border border-app-border rounded-2xl overflow-hidden">
                 <div className="px-6 py-4 border-b border-app-border flex items-center justify-between">
                   <h4 className="text-sm font-black text-app-heading uppercase tracking-widest">Recent Activity</h4>
@@ -3050,6 +3599,43 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
                         </div>
                       ))}
                     </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Prerequisites</label>
+                    <div className="space-y-2">
+                      {prerequisites.map(p => (
+                        <div key={p} className="flex items-center justify-between p-3 bg-app-heading/5 border border-app-border rounded-xl">
+                          <span className="text-xs font-black text-app-heading">{p}</span>
+                          <button 
+                            onClick={() => setPrerequisites(prerequisites.filter(item => item !== p))}
+                            className="text-red-500 hover:text-red-400"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button className="w-full py-2 bg-app-heading/5 border border-dashed border-app-border rounded-xl text-[10px] font-black text-zinc-500 uppercase tracking-widest hover:text-app-heading transition-all">
+                        + Add Prerequisite
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Learning Path</label>
+                    <select 
+                      value={learningPath}
+                      onChange={(e) => setLearningPath(e.target.value)}
+                      className="w-full bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none focus:border-[#a3e635] transition-all"
+                    >
+                      <option>Offensive Security</option>
+                      <option>Defensive Security</option>
+                      <option>Web Fundamentals</option>
+                      <option>Network Security</option>
+                      <option>Cloud Security</option>
+                    </select>
+                    <p className="text-[10px] text-zinc-500 font-medium px-1">Assign this room to a specific learning track.</p>
                   </div>
                 </div>
               </div>
@@ -3258,6 +3844,46 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
           )}
         </div>
       </div>
+
+      <AnimatePresence>
+        {showPreview && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="w-full max-w-md bg-app-card border border-app-border rounded-3xl overflow-hidden shadow-2xl relative"
+            >
+              <button 
+                onClick={() => setShowPreview(false)}
+                className="absolute top-4 right-4 p-2 bg-black/40 hover:bg-black/60 rounded-full text-white z-20"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <div className="p-8 text-center border-b border-app-border bg-app-heading/5">
+                <h3 className="text-xs font-black text-app-heading uppercase tracking-widest">Room Preview</h3>
+                <p className="text-[10px] text-zinc-500 mt-1">This is how your room appears in the library.</p>
+              </div>
+              <div className="p-8">
+                <RoomCard 
+                  room={{
+                    ...room,
+                    title,
+                    description,
+                    difficulty: difficulty as any
+                  }} 
+                  onClick={() => {}} 
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -4747,7 +5373,20 @@ export default function App() {
   const [savedLabs, setSavedLabs] = useState<number[]>(JSON.parse(localStorage.getItem('savedLabs') || '[]'));
   const [presence, setPresence] = useState<{ roomId: number, count: number }>({ roomId: 0, count: 0 });
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [globalActivity, setGlobalActivity] = useState<Record<string, { username: string, roomId: number, status: string }>>({});
 
+  useEffect(() => {
+    socket.on('global-presence-update', (data: { userId: string, username: string, roomId: number, status: string }) => {
+      setGlobalActivity(prev => ({
+        ...prev,
+        [data.userId]: data
+      }));
+    });
+
+    return () => {
+      socket.off('global-presence-update');
+    };
+  }, []);
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -4762,7 +5401,9 @@ export default function App() {
     if (token) {
       fetchInitialData();
     }
+  }, [token]);
 
+  useEffect(() => {
     socket.on('notification-new', (notification) => {
       setNotifications(prev => [notification, ...prev].slice(0, 20));
       addToast(notification.title, 'info');
@@ -5490,6 +6131,42 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Active Operators Section */}
+              {Object.keys(globalActivity).length > 0 && (
+                <div className="mb-12">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                    <h2 className="text-xs font-black text-emerald-500 uppercase tracking-[0.3em]">Active Operators</h2>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    {Object.values(globalActivity).filter(act => act.status !== 'stopped').map((activity, idx) => (
+                      <motion.div 
+                        key={idx}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-app-card border border-emerald-500/20 rounded-2xl p-4 flex items-center gap-4 shadow-lg shadow-emerald-500/5"
+                      >
+                        <div className="w-10 h-10 rounded-xl overflow-hidden border border-emerald-500/30">
+                          <img src={`https://picsum.photos/seed/${activity.username}/100/100`} className="w-full h-full object-cover" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-black text-app-heading">{activity.username}</span>
+                            <span className={cn(
+                              "w-1.5 h-1.5 rounded-full",
+                              activity.status === 'running' ? "bg-emerald-500" : "bg-yellow-500"
+                            )} />
+                          </div>
+                          <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest">
+                            {activity.status === 'running' ? 'Compromising' : 'Deploying'} {rooms.find(r => r.id === activity.roomId)?.title || 'Unknown Lab'}
+                          </p>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {filteredRooms.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                   {filteredRooms.map(room => (
@@ -5533,6 +6210,7 @@ export default function App() {
               addToast={addToast}
               onRoomComplete={handleRoomComplete}
               presence={presence}
+              user={user}
             />
           )}
 
@@ -5559,7 +6237,7 @@ export default function App() {
           )}
 
           {view === 'feedback' && (
-            <FeedbackPage addToast={addToast} />
+            <FeedbackPage addToast={addToast} user={user} />
           )}
 
           {view === 'profile' && user && (

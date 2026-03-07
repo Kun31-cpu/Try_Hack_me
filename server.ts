@@ -7,6 +7,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import nodemailer from "nodemailer";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -167,6 +168,25 @@ async function startServer() {
     }
   });
 
+  app.put("/api/rooms/:id", (req, res) => {
+    const roomId = parseInt(req.params.id);
+    const { title, description, difficulty, machine_ip } = req.body;
+    const roomIndex = rooms.findIndex(r => r.id === roomId);
+    
+    if (roomIndex !== -1) {
+      rooms[roomIndex] = {
+        ...rooms[roomIndex],
+        title: title || rooms[roomIndex].title,
+        description: description || rooms[roomIndex].description,
+        difficulty: difficulty || rooms[roomIndex].difficulty,
+        machine_ip: machine_ip || rooms[roomIndex].machine_ip
+      };
+      res.json(rooms[roomIndex]);
+    } else {
+      res.status(404).json({ error: "Room not found" });
+    }
+  });
+
   app.post("/api/rooms", upload.single('file'), (req, res) => {
     console.log("Received room upload request:", req.body);
     if (!req.file) {
@@ -235,6 +255,51 @@ async function startServer() {
 
   app.get("/api/notifications", (req, res) => {
     res.json(notifications.slice(0, 20));
+  });
+
+  app.post("/api/feedback", async (req, res) => {
+    const { feedback, userEmail, username } = req.body;
+    
+    if (!feedback) {
+      return res.status(400).json({ error: "Feedback is required" });
+    }
+
+    // Configure nodemailer transporter
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+      }
+    });
+
+    const mailOptions = {
+      from: process.env.SMTP_USER,
+      to: 'kbera1363@gmail.com',
+      subject: `New Feedback from HackLab User: ${username || 'Anonymous'}`,
+      text: `
+        User: ${username || 'Anonymous'}
+        Email: ${userEmail || 'Not provided'}
+        
+        Feedback:
+        ${feedback}
+      `
+    };
+
+    try {
+      if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+        console.warn("SMTP credentials not configured. Feedback will not be sent via email.");
+        // We'll still return success to the user but log the warning
+        return res.json({ success: true, message: "Feedback received (SMTP not configured)" });
+      }
+
+      await transporter.sendMail(mailOptions);
+      console.log("Feedback email sent successfully to kbera1363@gmail.com");
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error sending feedback email:", error);
+      res.status(500).json({ error: "Failed to send feedback email" });
+    }
   });
 
   app.post("/api/notifications/read", (req, res) => {
@@ -314,6 +379,31 @@ async function startServer() {
   });
 
   let userSSHKeys: Record<string, { publicKey: string, privateKey: string }> = {};
+  let userMachines: Record<string, Record<number, 'stopped' | 'starting' | 'running'>> = {};
+
+  app.get("/api/user/machines", (req, res) => {
+    const userId = "1"; // Mocking current user
+    res.json(userMachines[userId] || {});
+  });
+
+  app.post("/api/user/machines/:roomId/status", (req, res) => {
+    const userId = "1"; // Mocking current user
+    const roomId = parseInt(req.params.roomId);
+    const { status, username } = req.body;
+
+    if (!userMachines[userId]) userMachines[userId] = {};
+    userMachines[userId][roomId] = status;
+
+    // Broadcast to others that someone's machine status changed (for "Public" view)
+    io.emit("global-presence-update", {
+      userId,
+      username: username || "hacker",
+      roomId,
+      status
+    });
+
+    res.json({ success: true, status });
+  });
 
   app.get("/api/user/ssh-key", (req, res) => {
     const userId = "1"; // Mocking current user
