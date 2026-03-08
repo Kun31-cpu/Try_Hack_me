@@ -32,6 +32,8 @@ export interface Room {
   creator_name?: string;
   machine_ip: string;
   image_url?: string;
+  bannerUrl?: string;
+  avatarUrl?: string;
   category?: string;
   task_count?: number;
   tasks?: Task[];

@@ -170,7 +170,7 @@ async function startServer() {
 
   app.put("/api/rooms/:id", (req, res) => {
     const roomId = parseInt(req.params.id);
-    const { title, description, difficulty, machine_ip } = req.body;
+    const { title, description, difficulty, machine_ip, bannerUrl, avatarUrl } = req.body;
     const roomIndex = rooms.findIndex(r => r.id === roomId);
     
     if (roomIndex !== -1) {
@@ -179,9 +179,30 @@ async function startServer() {
         title: title || rooms[roomIndex].title,
         description: description || rooms[roomIndex].description,
         difficulty: difficulty || rooms[roomIndex].difficulty,
-        machine_ip: machine_ip || rooms[roomIndex].machine_ip
+        machine_ip: machine_ip || rooms[roomIndex].machine_ip,
+        bannerUrl: bannerUrl || rooms[roomIndex].bannerUrl,
+        avatarUrl: avatarUrl || rooms[roomIndex].avatarUrl
       };
       res.json(rooms[roomIndex]);
+    } else {
+      res.status(404).json({ error: "Room not found" });
+    }
+  });
+
+  app.post("/api/rooms/:id/clone", (req, res) => {
+    const roomId = parseInt(req.params.id);
+    const roomToClone = rooms.find(r => r.id === roomId);
+    
+    if (roomToClone) {
+      const clonedRoom = {
+        ...roomToClone,
+        id: rooms.length + 1,
+        title: `${roomToClone.title} (Clone)`,
+        // Deep copy tasks with new IDs if necessary, though for this mock keeping them or giving new ones is fine
+        tasks: roomToClone.tasks ? JSON.parse(JSON.stringify(roomToClone.tasks)) : []
+      };
+      rooms.push(clonedRoom);
+      res.json(clonedRoom);
     } else {
       res.status(404).json({ error: "Room not found" });
     }

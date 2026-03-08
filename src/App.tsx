@@ -728,7 +728,7 @@ const RoomCard = ({ room, onClick, isSaved, onToggleSave }: { room: Room, onClic
     >
       <div className="h-40 bg-app-card relative overflow-hidden">
         <img 
-          src={`https://picsum.photos/seed/${room.id}/800/400`} 
+          src={room.bannerUrl || `https://picsum.photos/seed/${room.id}/800/400`} 
           alt={room.title}
           className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-500"
           referrerPolicy="no-referrer"
@@ -1571,7 +1571,7 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
           <div className="bg-app-card border border-app-border rounded-2xl overflow-hidden shadow-xl">
             <div className="h-48 bg-app-card relative">
               <img 
-                src={`https://picsum.photos/seed/${room.id}/1200/400`} 
+                src={room.bannerUrl || `https://picsum.photos/seed/${room.id}/1200/400`} 
                 className="w-full h-full object-cover opacity-40"
                 referrerPolicy="no-referrer"
               />
@@ -2804,7 +2804,7 @@ const ManageRooms = ({ rooms, setView, setSelectedRoomId }: { rooms: Room[], set
         {rooms.map(room => (
           <div key={room.id} className="bg-app-card border border-app-border rounded-2xl overflow-hidden group hover:border-[#a3e635]/50 transition-all">
             <div className="h-40 bg-black/20 relative overflow-hidden">
-              <img src={`https://picsum.photos/seed/${room.id}/400/200`} className="w-full h-full object-cover opacity-60 group-hover:scale-110 transition-transform duration-500" />
+              <img src={room.bannerUrl || `https://picsum.photos/seed/${room.id}/400/200`} className="w-full h-full object-cover opacity-60 group-hover:scale-110 transition-transform duration-500" />
               <div className="absolute top-4 left-4 flex gap-2">
                 <span className="px-2 py-0.5 bg-black/60 text-white text-[10px] font-black rounded uppercase tracking-widest backdrop-blur-md border border-white/10">{room.difficulty}</span>
               </div>
@@ -2859,8 +2859,8 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
 
   const bannerInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
-  const [bannerUrl, setBannerUrl] = useState(`https://picsum.photos/seed/${room.id}-banner/1200/400`);
-  const [avatarUrl, setAvatarUrl] = useState(`https://picsum.photos/seed/${room.id}-avatar/200/200`);
+  const [bannerUrl, setBannerUrl] = useState(room?.bannerUrl || `https://picsum.photos/seed/${room.id}-banner/1200/400`);
+  const [avatarUrl, setAvatarUrl] = useState(room?.avatarUrl || `https://picsum.photos/seed/${room.id}-avatar/200/200`);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, type: 'banner' | 'avatar') => {
     const file = e.target.files?.[0];
@@ -2902,7 +2902,8 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
           description,
           difficulty,
           machine_ip: machineIp,
-          // Add other fields as needed by your API
+          bannerUrl,
+          avatarUrl
         })
       });
       
@@ -2916,6 +2917,28 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
       addToast('Error updating room settings', 'error');
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const [isCloning, setIsCloning] = useState(false);
+  const handleCloneRoom = async () => {
+    setIsCloning(true);
+    try {
+      const res = await fetch(`/api/rooms/${roomId}/clone`, {
+        method: 'POST',
+      });
+      
+      if (res.ok) {
+        const clonedRoom = await res.json();
+        addToast(`Room cloned successfully as "${clonedRoom.title}"`, 'success');
+        onUpdate();
+      } else {
+        throw new Error('Failed to clone room');
+      }
+    } catch (err) {
+      addToast('Error cloning room', 'error');
+    } finally {
+      setIsCloning(false);
     }
   };
 
@@ -3157,6 +3180,23 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
                     </div>
                     <button className="w-10 h-5 bg-[#a3e635] rounded-full relative">
                       <div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full" />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-app-heading/5 border border-app-border rounded-xl">
+                    <div>
+                      <h4 className="text-xs font-black text-app-heading uppercase tracking-widest">Clone Room</h4>
+                      <p className="text-[10px] text-zinc-500">Duplicate this room with all tasks.</p>
+                    </div>
+                    <button 
+                      onClick={handleCloneRoom}
+                      disabled={isCloning}
+                      className={cn(
+                        "px-4 py-2 bg-[#a3e635] hover:bg-[#bef264] text-black text-[10px] font-black rounded-lg uppercase tracking-widest transition-all flex items-center gap-2",
+                        isCloning && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      {isCloning ? <RotateCcw className="w-3 h-3 animate-spin" /> : <Copy className="w-3 h-3" />}
+                      Clone
                     </button>
                   </div>
                 </div>
@@ -5108,7 +5148,7 @@ const ProfilePage = ({ user, rooms, addToast, setView }: { user: User, rooms: Ro
                 <div key={room.id} className="bg-app-card border border-app-border rounded-2xl p-6 flex items-center gap-4">
                   <div className="w-16 h-16 bg-app-card rounded-xl overflow-hidden flex-shrink-0">
                     <img 
-                      src={`https://picsum.photos/seed/${room.id}/100/100`} 
+                      src={room.avatarUrl || `https://picsum.photos/seed/${room.id}/100/100`} 
                       className="w-full h-full object-cover opacity-60"
                       referrerPolicy="no-referrer"
                     />
