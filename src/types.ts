@@ -51,6 +51,7 @@ export interface Task {
   room_id: number;
   question: string;
   points: number;
+  difficulty?: 'Easy' | 'Medium' | 'Hard' | 'Insane';
   is_solved?: boolean;
 }
 

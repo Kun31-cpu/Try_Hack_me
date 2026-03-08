@@ -60,8 +60,10 @@ async function startServer() {
       difficulty: "Easy",
       category: "Education",
       tasks: [
-        { id: 1, question: "What is the default port for HTTP?", points: 10, answer: "80" },
-        { id: 2, question: "What does SQL stand for?", points: 20, answer: "Structured Query Language" }
+        { id: 1, question: "What is the default port for HTTP?", points: 10, answer: "80", difficulty: "Easy" },
+        { id: 2, question: "What does SQL stand for?", points: 20, answer: "Structured Query Language", difficulty: "Easy" },
+        { id: 3, question: "What is the default port for HTTPS?", points: 15, answer: "443", difficulty: "Easy" },
+        { id: 4, question: "What is the default port for SSH?", points: 25, answer: "22", difficulty: "Medium" }
       ]
     },
     {
@@ -71,7 +73,8 @@ async function startServer() {
       difficulty: "Medium",
       category: "Web",
       tasks: [
-        { id: 3, question: "What is the flag in /etc/passwd?", points: 50, answer: "HACK{passwd_flag}" }
+        { id: 5, question: "What is the flag in /etc/passwd?", points: 50, answer: "HACK{passwd_flag}", difficulty: "Medium" },
+        { id: 6, question: "What is the flag in /root/root.txt?", points: 100, answer: "HACK{root_flag}", difficulty: "Hard" }
       ]
     }
   ];
