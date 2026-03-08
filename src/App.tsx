@@ -68,8 +68,7 @@ import {
   Camera,
   Facebook,
   Save,
-  Star,
-  AlertTriangle
+  Star
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -3031,59 +3030,6 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
     }
   };
 
-  const [isDeleting, setIsDeleting] = useState(false);
-  const handleDeleteRoom = async () => {
-    if (!window.confirm('Are you absolutely sure you want to delete this room? This action cannot be undone.')) return;
-    
-    setIsDeleting(true);
-    try {
-      const res = await fetch(`/api/rooms/${roomId}`, {
-        method: 'DELETE',
-      });
-      
-      if (res.ok) {
-        addToast('Room deleted successfully!', 'success');
-        onBack();
-        onUpdate();
-      } else {
-        throw new Error('Failed to delete room');
-      }
-    } catch (err) {
-      addToast('Error deleting room', 'error');
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const [isResetting, setIsResetting] = useState(false);
-  const handleResetRoom = async () => {
-    if (!window.confirm('Resetting will clear all user progress and stats for this room. Continue?')) return;
-    
-    setIsResetting(true);
-    try {
-      const res = await fetch(`/api/rooms/${roomId}/reset`, {
-        method: 'POST',
-      });
-      
-      if (res.ok) {
-        addToast('Room data reset successfully!', 'success');
-        setLiveStats({
-          views: 0,
-          activeUsers: 0,
-          completions: 0,
-          avgTime: 0,
-          successRate: [0, 0, 0, 0, 0, 0, 0]
-        });
-      } else {
-        throw new Error('Failed to reset room');
-      }
-    } catch (err) {
-      addToast('Error resetting room data', 'error');
-    } finally {
-      setIsResetting(false);
-    }
-  };
-
   return (
     <div className="max-w-7xl mx-auto px-4 py-12">
       <div className="flex items-center gap-4 mb-8">
@@ -4084,73 +4030,7 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
             </div>
           )}
 
-          {activeTab === 'reset' && (
-            <div className="space-y-10">
-              <div className="flex items-center gap-3 mb-8">
-                <RotateCcw className="w-6 h-6 text-yellow-500" />
-                <h3 className="text-2xl font-black text-app-heading tracking-tight">Reset Room Data</h3>
-              </div>
-              <div className="p-8 bg-yellow-500/5 border border-yellow-500/20 rounded-3xl space-y-6">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-yellow-500/10 rounded-2xl flex items-center justify-center shrink-0">
-                    <AlertTriangle className="w-6 h-6 text-yellow-500" />
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-black text-app-heading tracking-tight">Warning: Data Reset</h4>
-                    <p className="text-sm text-zinc-500 font-medium leading-relaxed">This will clear all user submissions, statistics, and leaderboard data for this specific room. The room configuration and tasks will remain intact.</p>
-                  </div>
-                </div>
-                <div className="pt-4">
-                  <button 
-                    onClick={handleResetRoom}
-                    disabled={isResetting}
-                    className={cn(
-                      "px-8 py-3 bg-yellow-500 hover:bg-yellow-600 text-black font-black rounded-xl transition-all shadow-lg shadow-yellow-500/20 flex items-center gap-2",
-                      isResetting && "opacity-50 cursor-not-allowed"
-                    )}
-                  >
-                    {isResetting ? <RotateCcw className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                    Reset Room Data
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'delete' && (
-            <div className="space-y-10">
-              <div className="flex items-center gap-3 mb-8">
-                <Trash2 className="w-6 h-6 text-red-500" />
-                <h3 className="text-2xl font-black text-app-heading tracking-tight">Delete Room</h3>
-              </div>
-              <div className="p-8 bg-red-500/5 border border-red-500/20 rounded-3xl space-y-6">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center shrink-0">
-                    <Trash2 className="w-6 h-6 text-red-500" />
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-black text-app-heading tracking-tight">Danger Zone</h4>
-                    <p className="text-sm text-zinc-500 font-medium leading-relaxed">Deleting this room is a permanent action. All tasks, files, submissions, and associated data will be removed from HackLab forever.</p>
-                  </div>
-                </div>
-                <div className="pt-4">
-                  <button 
-                    onClick={handleDeleteRoom}
-                    disabled={isDeleting}
-                    className={cn(
-                      "px-8 py-3 bg-red-500 hover:bg-red-600 text-white font-black rounded-xl transition-all shadow-lg shadow-red-500/20 flex items-center gap-2",
-                      isDeleting && "opacity-50 cursor-not-allowed"
-                    )}
-                  >
-                    {isDeleting ? <RotateCcw className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                    Permanently Delete Room
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {!['general', 'design', 'video', 'stats', 'categories', 'tasks', 'reset', 'delete'].includes(activeTab) && (
+          {!['general', 'design', 'video', 'stats', 'categories', 'tasks'].includes(activeTab) && (
             <div className="flex flex-col items-center justify-center py-20 text-center">
               <div className="w-20 h-20 bg-app-heading/5 rounded-full flex items-center justify-center mb-6">
                 <Settings className="w-10 h-10 text-zinc-700" />
@@ -6549,8 +6429,8 @@ export default function App() {
             />
           )}
 
-          {view === 'badges' && user && (
-            <BadgesPage user={user} />
+          {view === 'badges' && (
+            <BadgesPage user={user!} />
           )}
 
           {view === 'feedback' && (
