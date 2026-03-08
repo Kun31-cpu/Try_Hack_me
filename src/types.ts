@@ -37,6 +37,13 @@ export interface Room {
   category?: string;
   task_count?: number;
   tasks?: Task[];
+  video1Url?: string;
+  video1Title?: string;
+  video1Enabled?: boolean;
+  video2Url?: string;
+  video2Title?: string;
+  video2Enabled?: boolean;
+  videoAutoplay?: boolean;
 }
 
 export interface Task {

@@ -44,7 +44,7 @@ async function startServer() {
     }
   });
 
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT || "3000");
 
   app.use(cors());
   app.use(express.json({ limit: '100mb' }));
@@ -170,7 +170,10 @@ async function startServer() {
 
   app.put("/api/rooms/:id", (req, res) => {
     const roomId = parseInt(req.params.id);
-    const { title, description, difficulty, machine_ip, bannerUrl, avatarUrl } = req.body;
+    const { 
+      title, description, difficulty, machine_ip, bannerUrl, avatarUrl,
+      video1Url, video1Title, video1Enabled, video2Url, video2Title, video2Enabled, videoAutoplay
+    } = req.body;
     const roomIndex = rooms.findIndex(r => r.id === roomId);
     
     if (roomIndex !== -1) {
@@ -181,7 +184,14 @@ async function startServer() {
         difficulty: difficulty || rooms[roomIndex].difficulty,
         machine_ip: machine_ip || rooms[roomIndex].machine_ip,
         bannerUrl: bannerUrl || rooms[roomIndex].bannerUrl,
-        avatarUrl: avatarUrl || rooms[roomIndex].avatarUrl
+        avatarUrl: avatarUrl || rooms[roomIndex].avatarUrl,
+        video1Url: video1Url !== undefined ? video1Url : rooms[roomIndex].video1Url,
+        video1Title: video1Title !== undefined ? video1Title : rooms[roomIndex].video1Title,
+        video1Enabled: video1Enabled !== undefined ? video1Enabled : rooms[roomIndex].video1Enabled,
+        video2Url: video2Url !== undefined ? video2Url : rooms[roomIndex].video2Url,
+        video2Title: video2Title !== undefined ? video2Title : rooms[roomIndex].video2Title,
+        video2Enabled: video2Enabled !== undefined ? video2Enabled : rooms[roomIndex].video2Enabled,
+        videoAutoplay: videoAutoplay !== undefined ? videoAutoplay : rooms[roomIndex].videoAutoplay
       };
       res.json(rooms[roomIndex]);
     } else {

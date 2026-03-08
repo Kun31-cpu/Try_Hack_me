@@ -1533,6 +1533,20 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
     }
   };
 
+  const getEmbedUrl = (url: string) => {
+    if (!url) return null;
+    if (url.includes('youtube.com/watch?v=')) {
+      return url.replace('watch?v=', 'embed/');
+    }
+    if (url.includes('youtu.be/')) {
+      return url.replace('youtu.be/', 'youtube.com/embed/');
+    }
+    if (url.includes('vimeo.com/')) {
+      return url.replace('vimeo.com/', 'player.vimeo.com/video/');
+    }
+    return url;
+  };
+
   if (loading || !room) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
       <LoadingSpinner size="lg" />
@@ -1589,6 +1603,43 @@ MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCv7+9v7+9v7+9v
               <div className="prose prose-invert max-w-none text-app-text leading-relaxed mb-12">
                 <ReactMarkdown>{room.description}</ReactMarkdown>
               </div>
+
+              {(room.video1Enabled && room.video1Url || room.video2Enabled && room.video2Url) && (
+                <div className="space-y-8 mb-12">
+                  <div className="flex items-center gap-3">
+                    <Video className="w-5 h-5 text-[#a3e635]" />
+                    <h2 className="text-xl font-bold text-app-heading">Video Resources</h2>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {room.video1Enabled && room.video1Url && (
+                      <div className="space-y-3">
+                        <div className="aspect-video bg-black rounded-xl overflow-hidden border border-app-border shadow-2xl">
+                          <iframe 
+                            src={getEmbedUrl(room.video1Url) || ''} 
+                            className="w-full h-full"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        </div>
+                        {room.video1Title && <p className="text-xs font-black text-zinc-500 uppercase tracking-widest px-1">{room.video1Title}</p>}
+                      </div>
+                    )}
+                    {room.video2Enabled && room.video2Url && (
+                      <div className="space-y-3">
+                        <div className="aspect-video bg-black rounded-xl overflow-hidden border border-app-border shadow-2xl">
+                          <iframe 
+                            src={getEmbedUrl(room.video2Url) || ''} 
+                            className="w-full h-full"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        </div>
+                        {room.video2Title && <p className="text-xs font-black text-zinc-500 uppercase tracking-widest px-1">{room.video2Title}</p>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-8">
                 <div className="flex items-center justify-between">
@@ -2853,7 +2904,37 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
   const [machineOs, setMachineOs] = useState('Linux');
   const [themeColor, setThemeColor] = useState('#a3e635');
   const [certificateTemplate, setCertificateTemplate] = useState('Standard');
-  const [videoAutoplay, setVideoAutoplay] = useState(false);
+  const [videoAutoplay, setVideoAutoplay] = useState(room?.videoAutoplay ?? false);
+  const [video1Url, setVideo1Url] = useState(room?.video1Url || '');
+  const [video1Title, setVideo1Title] = useState(room?.video1Title || '');
+  const [video1Enabled, setVideo1Enabled] = useState(room?.video1Enabled ?? true);
+  const [video2Url, setVideo2Url] = useState(room?.video2Url || '');
+  const [video2Title, setVideo2Title] = useState(room?.video2Title || '');
+  const [video2Enabled, setVideo2Enabled] = useState(room?.video2Enabled ?? false);
+  
+  // Real-time stats state
+  const [liveStats, setLiveStats] = useState({
+    views: 1240,
+    activeUsers: 0,
+    completions: 2,
+    avgTime: 38,
+    successRate: [40, 65, 30, 85, 55, 90, 70]
+  });
+
+  useEffect(() => {
+    if (activeTab === 'stats') {
+      const interval = setInterval(() => {
+        setLiveStats(prev => ({
+          ...prev,
+          activeUsers: Math.floor(Math.random() * 25) + 5,
+          views: prev.views + (Math.random() > 0.7 ? 1 : 0),
+          successRate: prev.successRate.map(v => Math.min(100, Math.max(0, v + (Math.random() * 10 - 5))))
+        }));
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab]);
+
   const [prerequisites, setPrerequisites] = useState<string[]>(['Basic Linux', 'Networking Fundamentals']);
   const [learningPath, setLearningPath] = useState('Offensive Security');
 
@@ -2903,7 +2984,14 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
           difficulty,
           machine_ip: machineIp,
           bannerUrl,
-          avatarUrl
+          avatarUrl,
+          video1Url,
+          video1Title,
+          video1Enabled,
+          video2Url,
+          video2Title,
+          video2Enabled,
+          videoAutoplay
         })
       });
       
@@ -3382,16 +3470,27 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
                 <div className="p-6 bg-app-heading/5 border border-app-border rounded-2xl space-y-6">
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-black text-app-heading uppercase tracking-widest">First Video</h4>
-                    <div className="w-10 h-5 bg-[#a3e635] rounded-full relative">
-                      <div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full" />
-                    </div>
+                    <button 
+                      onClick={() => setVideo1Enabled(!video1Enabled)}
+                      className={cn(
+                        "w-10 h-5 rounded-full relative transition-all",
+                        video1Enabled ? "bg-[#a3e635]" : "bg-zinc-700"
+                      )}
+                    >
+                      <div className={cn(
+                        "absolute top-1 w-3 h-3 bg-white rounded-full transition-all",
+                        video1Enabled ? "right-1" : "left-1"
+                      )} />
+                    </button>
                   </div>
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">First Video URL</label>
                       <input 
                         type="text" 
-                        placeholder="Enter URL"
+                        value={video1Url}
+                        onChange={(e) => setVideo1Url(e.target.value)}
+                        placeholder="Enter URL (YouTube, Vimeo, etc.)"
                         className="w-full bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none focus:border-[#a3e635] transition-all"
                       />
                     </div>
@@ -3399,6 +3498,8 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
                       <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">First Video Title (Optional)</label>
                       <input 
                         type="text" 
+                        value={video1Title}
+                        onChange={(e) => setVideo1Title(e.target.value)}
                         placeholder="Enter custom title"
                         className="w-full bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none focus:border-[#a3e635] transition-all"
                       />
@@ -3406,30 +3507,52 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
                   </div>
                 </div>
 
-                <div className="p-6 bg-app-heading/5 border border-app-border rounded-2xl space-y-6 opacity-50">
+                <div className={cn(
+                  "p-6 bg-app-heading/5 border border-app-border rounded-2xl space-y-6 transition-opacity",
+                  !video2Enabled && "opacity-50"
+                )}>
                   <div className="flex items-center justify-between">
                     <h4 className="text-sm font-black text-app-heading uppercase tracking-widest">Second Video</h4>
-                    <div className="w-10 h-5 bg-zinc-700 rounded-full relative">
-                      <div className="absolute left-1 top-1 w-3 h-3 bg-white rounded-full" />
-                    </div>
+                    <button 
+                      onClick={() => setVideo2Enabled(!video2Enabled)}
+                      className={cn(
+                        "w-10 h-5 rounded-full relative transition-all",
+                        video2Enabled ? "bg-[#a3e635]" : "bg-zinc-700"
+                      )}
+                    >
+                      <div className={cn(
+                        "absolute top-1 w-3 h-3 bg-white rounded-full transition-all",
+                        video2Enabled ? "right-1" : "left-1"
+                      )} />
+                    </button>
                   </div>
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Second Video URL</label>
                       <input 
                         type="text" 
+                        value={video2Url}
+                        onChange={(e) => setVideo2Url(e.target.value)}
                         placeholder="Enter URL"
-                        disabled
-                        className="w-full bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none transition-all cursor-not-allowed"
+                        disabled={!video2Enabled}
+                        className={cn(
+                          "w-full bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none transition-all",
+                          !video2Enabled && "cursor-not-allowed"
+                        )}
                       />
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest px-1">Second Video Title (Optional)</label>
                       <input 
                         type="text" 
+                        value={video2Title}
+                        onChange={(e) => setVideo2Title(e.target.value)}
                         placeholder="Enter custom title"
-                        disabled
-                        className="w-full bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none transition-all cursor-not-allowed"
+                        disabled={!video2Enabled}
+                        className={cn(
+                          "w-full bg-black/5 dark:bg-black/40 border border-app-border rounded-xl px-4 py-3 text-sm text-app-heading focus:outline-none transition-all",
+                          !video2Enabled && "cursor-not-allowed"
+                        )}
                       />
                     </div>
                   </div>
@@ -3511,12 +3634,18 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 {[
-                  { label: 'Views', value: '1,240', icon: Layout },
-                  { label: 'Users', value: '18', icon: Users },
-                  { label: 'Completed', value: '2', icon: CheckCircle2 },
-                  { label: 'Avg. Time', value: '38m', icon: Clock },
+                  { label: 'Views', value: liveStats.views.toLocaleString(), icon: Layout },
+                  { label: 'Active Users', value: liveStats.activeUsers, icon: Users, live: true },
+                  { label: 'Completed', value: liveStats.completions, icon: CheckCircle2 },
+                  { label: 'Avg. Time', value: `${liveStats.avgTime}m`, icon: Clock },
                 ].map((stat, i) => (
-                  <div key={i} className="p-6 bg-app-heading/5 border border-app-border rounded-2xl">
+                  <div key={i} className="p-6 bg-app-heading/5 border border-app-border rounded-2xl relative overflow-hidden">
+                    {stat.live && (
+                      <div className="absolute top-2 right-2 flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                        <span className="text-[8px] font-black text-red-500 uppercase tracking-widest">Live</span>
+                      </div>
+                    )}
                     <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">{stat.label}</p>
                     <div className="flex items-center gap-3">
                       <stat.icon className="w-5 h-5 text-[#a3e635]" />
@@ -3528,16 +3657,20 @@ const ManageRoomDetail = ({ roomId, rooms, onBack, addToast, onUpdate }: { roomI
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="bg-app-heading/5 border border-app-border rounded-2xl p-6">
-                  <h4 className="text-sm font-black text-app-heading uppercase tracking-widest mb-6">Success Rate</h4>
+                  <div className="flex items-center justify-between mb-6">
+                    <h4 className="text-sm font-black text-app-heading uppercase tracking-widest">Success Rate</h4>
+                    <span className="text-[10px] font-black text-[#a3e635] uppercase tracking-widest">Real-time</span>
+                  </div>
                   <div className="flex items-end gap-2 h-32">
-                    {[40, 65, 30, 85, 55, 90, 70].map((h, i) => (
+                    {liveStats.successRate.map((h, i) => (
                       <div key={i} className="flex-1 bg-[#a3e635]/20 rounded-t-lg relative group">
-                        <div 
-                          style={{ height: `${h}%` }} 
+                        <motion.div 
+                          initial={false}
+                          animate={{ height: `${h}%` }}
                           className="absolute bottom-0 left-0 right-0 bg-[#a3e635] rounded-t-lg transition-all group-hover:brightness-110"
                         />
                         <div className="absolute -top-6 left-1/2 -translate-x-1/2 text-[8px] font-black text-[#a3e635] opacity-0 group-hover:opacity-100 transition-opacity">
-                          {h}%
+                          {Math.round(h)}%
                         </div>
                       </div>
                     ))}
