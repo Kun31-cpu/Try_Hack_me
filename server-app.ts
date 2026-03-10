@@ -1,7 +1,5 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import { Server } from "socket.io";
-import http from "http";
 import cors from "cors";
 import multer from "multer";
 import path from "path";
@@ -36,8 +34,10 @@ export async function createApp(io?: Server) {
       difficulty: "Easy",
       category: "Education",
       tasks: [
-        { id: 1, question: "What is the default port for HTTP?", points: 10, answer: "80" },
-        { id: 2, question: "What does SQL stand for?", points: 20, answer: "Structured Query Language" }
+        { id: 1, question: "What is the default port for HTTP?", points: 10, answer: "80", difficulty: "Easy" },
+        { id: 2, question: "What does SQL stand for?", points: 20, answer: "Structured Query Language", difficulty: "Easy" },
+        { id: 3, question: "What is the default port for HTTPS?", points: 15, answer: "443", difficulty: "Easy" },
+        { id: 4, question: "What is the default port for SSH?", points: 25, answer: "22", difficulty: "Medium" }
       ]
     },
     {
@@ -47,7 +47,8 @@ export async function createApp(io?: Server) {
       difficulty: "Medium",
       category: "Web",
       tasks: [
-        { id: 3, question: "What is the flag in /etc/passwd?", points: 50, answer: "HACK{passwd_flag}" }
+        { id: 5, question: "What is the flag in /etc/passwd?", points: 50, answer: "HACK{passwd_flag}", difficulty: "Medium" },
+        { id: 6, question: "What is the flag in /root/root.txt?", points: 100, answer: "HACK{root_flag}", difficulty: "Hard" }
       ]
     }
   ];
@@ -77,22 +78,51 @@ export async function createApp(io?: Server) {
   });
 
   app.post("/api/auth/login", (req, res) => {
-    const { username } = req.body;
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password are required" });
+    }
+    
     const user = users.find(u => u.username === username);
     if (user) {
-      return res.json({ user, token: "mock-jwt-token" });
+      res.json({
+        user: { ...user },
+        token: "mock-token-" + user.id
+      });
     } else {
-      const newUser = {
-        id: (users.length + 1).toString(),
-        username,
-        points: 0,
-        solvedLabs: [],
-        streak: 0,
-        avatar_url: `https://picsum.photos/seed/${username}/100/100`
-      };
+      // For demo purposes, if user not found, create a mock one
+      const newUser = { id: Date.now().toString(), username, points: 0, solvedLabs: [], streak: 0 };
       users.push(newUser);
-      return res.json({ user: newUser, token: "mock-jwt-token" });
+      res.json({
+        user: newUser,
+        token: "mock-token-" + newUser.id
+      });
     }
+  });
+
+  app.post("/api/auth/register", (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password are required" });
+    }
+
+    if (users.find(u => u.username === username)) {
+      return res.status(400).json({ error: "Username already exists" });
+    }
+
+    const newUser = { 
+      id: (users.length + 1).toString(), 
+      username, 
+      points: 0, 
+      solvedLabs: [], 
+      streak: 0,
+      avatar_url: `https://picsum.photos/seed/${username}/100/100`
+    };
+    users.push(newUser);
+    res.json({
+      user: newUser,
+      token: "mock-token-" + newUser.id
+    });
   });
 
   app.get("/api/users/:id/profile", (req, res) => {
@@ -344,6 +374,7 @@ export async function createApp(io?: Server) {
     return res.json({ status: "incorrect" });
   });
 
+  let userSSHKeys: Record<string, { publicKey: string, privateKey: string }> = {};
   let userMachines: Record<string, Record<number, 'stopped' | 'starting' | 'running'>> = {};
 
   app.get("/api/user/machines", (req, res) => {
@@ -369,6 +400,33 @@ export async function createApp(io?: Server) {
     }
 
     return res.json({ success: true });
+  });
+
+  app.get("/api/user/ssh-key", (req, res) => {
+    const userId = "1"; // Mocking current user
+    if (userSSHKeys[userId]) {
+      return res.json(userSSHKeys[userId]);
+    } else {
+      return res.status(404).json({ error: "No SSH key found" });
+    }
+  });
+
+  app.post("/api/user/ssh-key/generate", (req, res) => {
+    const userId = "1"; // Mocking current user
+    
+    // Simulate SSH key generation
+    const mockPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC7...hacker@hacklab`;
+    const mockPrivateKey = `-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
+NhAAAAAwEAAQAAAYEAr+...
+-----END OPENSSH PRIVATE KEY-----`;
+
+    userSSHKeys[userId] = {
+      publicKey: mockPublicKey,
+      privateKey: mockPrivateKey
+    };
+
+    return res.json(userSSHKeys[userId]);
   });
 
   app.get("/api/vpn/config", (req, res) => {

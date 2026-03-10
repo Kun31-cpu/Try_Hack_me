@@ -160,6 +160,17 @@ const LoadingOverlay = () => (
   </div>
 );
 
+const OfflineBanner = () => (
+  <motion.div 
+    initial={{ y: -100 }}
+    animate={{ y: 0 }}
+    className="fixed top-0 left-0 right-0 z-[200] bg-red-500 text-white py-2 px-4 flex items-center justify-center gap-3 shadow-lg"
+  >
+    <Globe className="w-4 h-4 animate-pulse" />
+    <span className="text-xs font-black uppercase tracking-widest">You are currently offline. Please connect to the internet.</span>
+  </motion.div>
+);
+
 const Navbar = ({ 
   user, 
   onLogout, 
@@ -535,7 +546,7 @@ const Navbar = ({
   );
 };
 
-const AuthPage = ({ onLogin }: { onLogin: (u: User, token: string) => void }) => {
+const AuthPage = ({ onLogin, isOnline }: { onLogin: (u: User, token: string) => void, isOnline: boolean }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -554,6 +565,10 @@ const AuthPage = ({ onLogin }: { onLogin: (u: User, token: string) => void }) =>
   }, [onLogin]);
 
   const handleGoogleLogin = async () => {
+    if (!isOnline) {
+      setError('No internet connection. Please connect to the internet.');
+      return;
+    }
     try {
       const res = await fetch('/api/auth/google/url');
       const { url } = await res.json();
@@ -565,6 +580,10 @@ const AuthPage = ({ onLogin }: { onLogin: (u: User, token: string) => void }) =>
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isOnline) {
+      setError('No internet connection. Please connect to the internet.');
+      return;
+    }
     setError('');
     setLoading(true);
     const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
@@ -578,10 +597,10 @@ const AuthPage = ({ onLogin }: { onLogin: (u: User, token: string) => void }) =>
       if (res.ok) {
         onLogin(data.user, data.token);
       } else {
-        setError(data.error);
+        setError(data.error || 'Authentication failed');
       }
     } catch (err) {
-      setError('Connection error');
+      setError('Connection error. Please check your internet.');
     } finally {
       setLoading(false);
     }
@@ -5721,6 +5740,20 @@ export default function App() {
   const [presence, setPresence] = useState<{ roomId: number, count: number }>({ roomId: 0, count: 0 });
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [globalActivity, setGlobalActivity] = useState<Record<string, { username: string, roomId: number, status: string }>>({});
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     socket.on('global-presence-update', (data: { userId: string, username: string, roomId: number, status: string }) => {
@@ -5898,7 +5931,9 @@ export default function App() {
       setUser(u);
       setToken(t);
       localStorage.setItem('token', t);
+      localStorage.setItem('user', JSON.stringify(u));
       setView('dashboard');
+      addToast(`Welcome back, ${u.username}!`, 'success');
     }
   };
 
@@ -5951,6 +5986,8 @@ export default function App() {
         notifications={notifications}
         markNotificationsRead={markNotificationsRead}
       />
+
+      {!isOnline && <OfflineBanner />}
 
       {/* Modern Floating Navigation - Visible on all devices */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-fit">
@@ -6018,7 +6055,7 @@ export default function App() {
       <main className="pb-24 lg:pb-20">
         <AnimatePresence mode="wait">
           {view === 'auth' && (
-            <AuthPage onLogin={handleLogin} />
+            <AuthPage onLogin={handleLogin} isOnline={isOnline} />
           )}
 
           {view === 'dashboard' && (
@@ -6632,7 +6669,7 @@ export default function App() {
             token ? (
               <UploadPage token={token} onSuccess={() => { fetchRooms(); setView('rooms'); }} />
             ) : (
-              <AuthPage onLogin={handleLogin} />
+              <AuthPage onLogin={handleLogin} isOnline={isOnline} />
             )
           )}
         </AnimatePresence>
